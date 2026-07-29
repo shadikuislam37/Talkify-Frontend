@@ -1,4 +1,3 @@
-// hooks/use-online-users.ts
 import { useEffect, useState } from "react";
 import { socket } from "@/lib/socket";
 
@@ -31,5 +30,5 @@ export function useOnlineUsers() {
     };
   }, []);
 
-  return onlineUsers; // এটি ব্যবহার করে ইউজার লিস্টে Green dot দেখাতে পারবেন
+  return onlineUsers;
 }

@@ -5,35 +5,13 @@ import { useForm } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocket } from "@/hooks/use-socket";
 import { useChat } from "@/hooks/use-chat";
-import { Loader2, Send, Paperclip, X, Check, CheckCheck, Reply, Trash2, CornerUpLeft, Info } from "lucide-react";
+import { Loader2, Send, Paperclip, X, Info } from "lucide-react";
 import { sendMessageSchema, SendMessageInput } from "@/schemas/chat.schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import GroupDetailsModal from "./group-details-modal";
-
-interface Message {
-  id: string;
-  senderId?: string;
-  body?: string;
-  image?: string;
-  createdAt?: string;
-  isRead?: boolean;
-  status?: "SENT" | "DELIVERED" | "READ";
-  replyToId?: string;
-  replyTo?: {
-    id: string;
-    body?: string;
-    senderName?: string;
-    sender?: {
-      id?: string;
-      name?: string;
-    };
-  };
-  sender?: {
-    id?: string;
-    name?: string;
-    image?: string | null;
-  };
-}
+import MessageBubble, { Message } from "./message-bubble";
 
 interface ChatBoxProps {
   conversationId: string;
@@ -55,6 +33,21 @@ export default function ChatBox({
 
   const [isGroupDetailsOpen, setIsGroupDetailsOpen] = useState(false);
 
+  // 🌟 ১-টু-১ চ্যাটের জন্য অপর ইউজারকে আলাদা করা
+  const otherUser = React.useMemo(() => {
+    if (!conversation || conversation.isGroup) return null;
+    const users = conversation.users || [];
+    return users.find((u: any) => u.id !== currentUserId) || users[0];
+  }, [conversation, currentUserId]);
+
+  const chatTitle = conversation?.isGroup
+    ? conversation.name || "Group Chat"
+    : otherUser?.name || conversation?.name || "Chat";
+
+  const chatAvatarImage = conversation?.isGroup
+    ? conversation?.image
+    : otherUser?.image;
+
   const {
     data,
     isLoading,
@@ -69,7 +62,9 @@ export default function ChatBox({
   }, [data]);
 
   const { mutateAsync: sendMessage, isPending: isSending } = useChat.useSendMessage();
-  const { mutateAsync: deleteMessage } = useChat.useDeleteMessage?.() || { mutateAsync: async () => {} };
+  const { mutateAsync: deleteMessage } = useChat.useDeleteMessage?.() || {
+    mutateAsync: async () => {},
+  };
 
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -78,7 +73,7 @@ export default function ChatBox({
 
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  
+
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const observerTargetRef = useRef<HTMLDivElement>(null);
@@ -103,13 +98,13 @@ export default function ChatBox({
     };
   }, [socket, conversationId]);
 
-  // 🌟 ১. সকেটে রিয়েল-টাইম মেসেজ ফেচ এবং স্ট্যাটাস চেঞ্জের একমাত্র লিসেনার
+  // 🌟 সকেট মেসেজ লিসেনার
   useEffect(() => {
     if (!socket) return;
 
     const handleNewMessage = (newMessage: Message) => {
       queryClient.setQueryData(
-        ["messages", conversationId], 
+        ["messages", conversationId],
         (oldData: any) => {
           if (!oldData) return oldData;
           const newPages = [...oldData.pages];
@@ -142,33 +137,40 @@ export default function ChatBox({
 
     socket.on("receive_message", handleNewMessage);
     socket.on("on_message_status_change", handleStatusChange);
+    socket.on("message_read", handleStatusChange);
 
     return () => {
       socket.off("receive_message", handleNewMessage);
       socket.off("on_message_status_change", handleStatusChange);
+      socket.off("message_read", handleStatusChange);
     };
   }, [socket, conversationId, queryClient]);
 
-  // 🌟 ২. আনরিড মেসেজ রিড হিসেবে চিহ্নিত করা ও সকেট পাঠানো
-  useEffect(() => {
-    if (!socket || !conversationId || !currentUserId || messages.length === 0) return;
+  // 🌟 আনরিড মেসেজ রিড করার ট্র্রিগার (একদম নিখুঁত ফিক্স)
+useEffect(() => {
+  if (!socket || !conversationId || !currentUserId || messages.length === 0) return;
 
-    const unreadMessages = messages.filter((m) => {
-      const msgSenderId = m.senderId || m.sender?.id;
-      const isMyMessage = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
-      return !isMyMessage && m.status !== "READ";
-    });
+  // 🔴 ১. শুধু অপজিট ইউজারের পাঠানো মেসেজগুলো ফিল্টার করা (যেগুলো আমার নয় এবং READ হয়নি)
+  const incomingUnreadMessages = messages.filter((m) => {
+    const msgSenderId = m.senderId || m.sender?.id;
+    const isMyMessage = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
+    
+    // আমার পাঠানো মেসেজ হলে স্কিপ করব, শুধুমাত্র অন্য ইউজারের মেসেজ রিড মার্ক করব
+    return !isMyMessage && m.status !== "READ";
+  });
 
-    if (unreadMessages.length > 0) {
-      unreadMessages.forEach((msg) => {
-        socket.emit("update_message_status", {
-          messageId: msg.id,
-          conversationId,
-          status: "READ",
-        });
+  // 🔴 ২. অন্য ইউজারের মেসেজগুলো পড়া হলে তবেই ব্যাকএন্ডে সকেট এমিট পাঠাব
+  if (incomingUnreadMessages.length > 0) {
+    incomingUnreadMessages.forEach((msg) => {
+      socket.emit("update_message_status", {
+        messageId: msg.id,
+        conversationId,
+        userId: currentUserId, // রিডার হিসেবে আমার আইডি যাচ্ছে
+        status: "READ",
       });
-    }
-  }, [socket, conversationId, messages, currentUserId]);
+    });
+  }
+}, [socket, conversationId, messages, currentUserId]);
 
   const handleObserver = useCallback(
     (entries: IntersectionObserverEntry[]) => {
@@ -229,6 +231,7 @@ export default function ChatBox({
     };
   }, [socket, conversationId]);
 
+  // 🌟 TanStack Form সাথে conversationId ফিক্স
   const form = useForm({
     defaultValues: {
       body: "",
@@ -237,28 +240,42 @@ export default function ChatBox({
     } as SendMessageInput,
     validators: { onChange: sendMessageSchema },
     onSubmit: async ({ value }) => {
-      if (!value.body?.trim() && !selectedImage) return;
+      // 🌟 conversationId নিশ্চিত ফিক্সড
+      const activeId = conversationId || value.conversationId;
 
-      if (socket) socket.emit("typing_stop", { conversationId });
+      if (!activeId || (!value.body?.trim() && !selectedImage)) return;
+
+      if (socket) socket.emit("typing_stop", { conversationId: activeId });
 
       const payload = {
-        conversationId: conversationId,
+        conversationId: activeId,
         body: value.body?.trim() ? value.body.trim() : undefined,
         image: selectedImage || undefined,
         replyToId: replyingTo?.id || undefined,
       };
 
-      const newMsg = await sendMessage(payload);
+      try {
+        const newMsg = await sendMessage(payload);
 
-      if (socket && newMsg) {
-        socket.emit("send_message", { conversationId, message: newMsg });
+        if (socket && newMsg) {
+          socket.emit("send_message", { conversationId: activeId, message: newMsg });
+        }
+
+        form.reset();
+        setSelectedImage(null);
+        setReplyingTo(null);
+      } catch (err) {
+        console.error("Failed to send message:", err);
       }
-
-      form.reset();
-      setSelectedImage(null);
-      setReplyingTo(null);
     },
   });
+
+  // conversationId চেঞ্জ হলে তানস্ট্যাক ফর্মে সিঙ্ক রাখা
+  useEffect(() => {
+    if (conversationId) {
+      form.setFieldValue("conversationId", conversationId);
+    }
+  }, [conversationId, form]);
 
   const handleInputChange = (text: string) => {
     if (!socket) return;
@@ -311,16 +328,20 @@ export default function ChatBox({
           className={`flex items-center gap-3 ${conversation?.isGroup ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
         >
           <Avatar className="h-9 w-9">
-            <AvatarImage src={conversation?.image} />
+            <AvatarImage src={chatAvatarImage || undefined} />
             <AvatarFallback className="text-xs font-semibold">
-              {conversation?.name ? conversation.name.slice(0, 2).toUpperCase() : "GC"}
+              {chatTitle ? chatTitle.slice(0, 2).toUpperCase() : "CU"}
             </AvatarFallback>
           </Avatar>
           <div>
-            <h2 className="font-semibold text-sm leading-tight">{conversation?.name || "Chat"}</h2>
-            {conversation?.isGroup && (
+            <h2 className="font-semibold text-sm leading-tight">{chatTitle}</h2>
+            {conversation?.isGroup ? (
               <p className="text-[11px] text-muted-foreground">
                 {conversation?.users?.length || 0} members • Click for info
+              </p>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">
+                {otherUser?.email || "Direct Message"}
               </p>
             )}
           </div>
@@ -359,119 +380,17 @@ export default function ChatBox({
           </p>
         ) : (
           <div className="flex flex-col space-y-3 mt-auto">
-            {messages.map((msg) => {
-              const msgSenderId = msg.senderId || msg.sender?.id;
-              const isMe = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
-              const isHighlighted = highlightedMsgId === msg.id;
-
-              return (
-                <div
-                  key={msg.id}
-                  id={`msg-${msg.id}`}
-                  className={`group relative flex flex-col transition-all duration-300 p-1 rounded-lg ${
-                    isHighlighted ? "bg-primary/20 ring-2 ring-primary/40" : ""
-                  } ${isMe ? "items-end" : "items-start"}`}
-                >
-                  {/* "X replied to Y" Header Text */}
-                  {msg.replyTo && (
-                    <div
-                      onClick={() => {
-                        const targetId = msg.replyToId || msg.replyTo?.id;
-                        if (targetId) scrollToMessage(targetId);
-                      }}
-                      className="flex items-center gap-1 text-[11px] text-muted-foreground mb-0.5 cursor-pointer hover:underline px-1"
-                    >
-                      <CornerUpLeft className="h-3 w-3" />
-                      <span>
-                        <strong className="font-semibold text-foreground">
-                          {isMe ? "You" : msg.sender?.name || "User"}
-                        </strong>{" "}
-                        replied to{" "}
-                        <strong className="font-semibold text-foreground">
-                          {msg.replyTo.sender?.name || msg.replyTo.senderName || "User"}
-                        </strong>
-                      </span>
-                    </div>
-                  )}
-
-                  <div className={`flex items-end gap-2 w-full ${isMe ? "justify-end" : "justify-start"}`}>
-                    {!isMe && (
-                      <Avatar className="h-8 w-8 mb-1">
-                        <AvatarImage src={msg.sender?.image || undefined} />
-                        <AvatarFallback className="text-xs">
-                          {msg.sender?.name ? msg.sender.name.slice(0, 2).toUpperCase() : "SU"}
-                        </AvatarFallback>
-                      </Avatar>
-                    )}
-
-                    {/* Hover Actions */}
-                    <div className={`hidden group-hover:flex items-center gap-1 ${isMe ? "order-first" : "order-last"}`}>
-                      <button
-                        type="button"
-                        onClick={() => setReplyingTo(msg)}
-                        title="Reply"
-                        className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
-                      >
-                        <Reply className="h-3.5 w-3.5" />
-                      </button>
-                      {isMe && (
-                        <button
-                          type="button"
-                          onClick={() => setDeletingMessageId(msg.id)}
-                          title="Delete"
-                          className="p-1 hover:bg-muted rounded text-red-500 transition-colors"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col max-w-[70%]">
-                      {/* Parent Reply Body Pill */}
-                      {msg.replyTo && (
-                        <div
-                          onClick={() => {
-                            const targetId = msg.replyToId || msg.replyTo?.id;
-                            if (targetId) scrollToMessage(targetId);
-                          }}
-                          className={`cursor-pointer text-xs p-2.5 rounded-2xl mb-1 bg-muted/80 hover:bg-muted text-muted-foreground transition-colors truncate border border-border/50 ${
-                            isMe ? "self-end rounded-br-none" : "self-start rounded-bl-none"
-                          }`}
-                        >
-                          <p className="truncate opacity-90">{msg.replyTo.body || "Attachment"}</p>
-                        </div>
-                      )}
-
-                      {/* Main Message Bubble */}
-                      <div
-                        className={`p-2.5 rounded-2xl border space-y-1 ${
-                          isMe
-                            ? "bg-primary text-primary-foreground rounded-br-none self-end"
-                            : "bg-muted/50 rounded-bl-none self-start"
-                        }`}
-                      >
-                        {msg.image && (
-                          <img src={msg.image} alt="attachment" className="rounded-md max-h-48 object-cover mb-1" />
-                        )}
-
-                        {msg.body && <p className="text-sm font-medium break-words">{msg.body}</p>}
-
-                        {/* 🌟 সেন্ডারের জন্য READ টিক মার্কের ফিক্সড অংশ */}
-                        {isMe && (
-                          <div className="flex justify-end items-center gap-1 text-[10px] opacity-80 mt-0.5">
-                            {msg.status === "READ" ? (
-                              <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold" />
-                            ) : (
-                              <Check className="h-3.5 w-3.5 text-muted-foreground" />
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {messages.map((msg) => (
+              <MessageBubble
+                key={msg.id}
+                msg={msg}
+                currentUserId={currentUserId}
+                highlightedMsgId={highlightedMsgId}
+                onReply={(m) => setReplyingTo(m)}
+                onDelete={(id) => setDeletingMessageId(id)}
+                onScrollToReply={scrollToMessage}
+              />
+            ))}
           </div>
         )}
 
@@ -534,8 +453,7 @@ export default function ChatBox({
         <form.Field name="body">
           {(field) => (
             <div className="flex-1">
-              <input
-                type="text"
+              <Input
                 name={field.name}
                 value={field.state.value || ""}
                 onChange={(e) => {
@@ -544,19 +462,15 @@ export default function ChatBox({
                 }}
                 onBlur={field.handleBlur}
                 placeholder="Type a message..."
-                className="w-full px-3 py-2 border rounded-md text-sm outline-none focus:ring-2 focus:ring-primary"
+                autoComplete="off"
               />
             </div>
           )}
         </form.Field>
 
-        <button
-          type="submit"
-          disabled={isSending}
-          className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-1 h-[38px]"
-        >
-          {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-        </button>
+        <Button type="submit" disabled={isSending} size="icon">
+          {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </Button>
       </form>
 
       {/* Delete Confirmation Modal */}
@@ -570,22 +484,22 @@ export default function ChatBox({
               Are you sure you want to delete this message? This action cannot be undone.
             </p>
             <div className="flex justify-end gap-2 pt-2">
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 disabled={isDeleting}
                 onClick={() => setDeletingMessageId(null)}
-                className="px-4 py-2 text-sm font-medium border rounded-md hover:bg-muted transition-colors disabled:opacity-50"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="destructive"
                 disabled={isDeleting}
                 onClick={confirmDeleteMessage}
-                className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-1"
               >
                 {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

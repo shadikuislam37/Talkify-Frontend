@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useChat } from "@/hooks/use-chat";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, X } from "lucide-react";
 
 export interface UserProfile {
   id: string;
@@ -17,12 +17,14 @@ interface UserSearchProps {
   onSelectUser: (user: UserProfile) => void;
   isLoadingAction?: boolean;
   placeholder?: string;
+  excludeUserIds?: string[]; // 🌟 নির্দিষ্ট ইউজারদের (যেমন: নিজেকে বা অলরেডি যুক্ত হওয়া মেম্বারদের) লিস্ট থেকে হাইড করার জন্য
 }
 
 export function UserSearch({
   onSelectUser,
   isLoadingAction = false,
   placeholder = "Search user by name or email...",
+  excludeUserIds = [],
 }: UserSearchProps) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -35,9 +37,13 @@ export function UserSearch({
     return () => clearTimeout(timer);
   }, [query]);
 
-  // 🌟 Centralized useChat object-এর useSearchUsers ব্যবহার করা হলো
+  // Centralized useChat object-এর useSearchUsers
   const { data: rawUsers = [], isLoading } = useChat.useSearchUsers(debouncedQuery);
-  const users = rawUsers as UserProfile[];
+
+  // 🌟 এক্সক্লুড করা আইডিগুলো বাদ দিয়ে লিস্ট ফিল্টার করা
+  const users = (rawUsers as UserProfile[]).filter(
+    (user) => !excludeUserIds.includes(user.id)
+  );
 
   return (
     <div className="space-y-4 py-2">
@@ -48,12 +54,21 @@ export function UserSearch({
           placeholder={placeholder}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="pl-9"
+          className="pl-9 pr-8"
         />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {/* User Results List */}
-      <div className="max-h-60 overflow-y-auto space-y-1">
+      <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
         {isLoading ? (
           <div className="flex justify-center items-center py-6 text-muted-foreground gap-2">
             <Loader2 className="h-4 w-4 animate-spin" />

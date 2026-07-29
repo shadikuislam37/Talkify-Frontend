@@ -1,6 +1,23 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
-import { api, asArray } from "@/lib/api"; // Your Fixed Axios Instance
-import { Conversation } from "@/components/chat/chat-sidebar";
+import { api, asArray } from "@/lib/api";
+
+export interface Conversation {
+  id: string;
+  name?: string;
+  isGroup?: boolean;
+  adminIds?: string[];
+  updatedAt: string;
+  users: {
+    id: string;
+    name: string;
+    image?: string | null;
+  }[];
+  messages?: {
+    body?: string | null;
+    image?: string | null;
+    createdAt: string;
+  }[];
+}
 
 // --- CONVERSATIONS ---
 const useGetConversations = () => {
@@ -8,7 +25,6 @@ const useGetConversations = () => {
     queryKey: ["conversations"],
     queryFn: async () => {
       const res = await api.get("/conversations");
-      console.log("Raw Conversations API Response:", res);
       return asArray<Conversation>(res);
     },
   });
@@ -18,7 +34,8 @@ const useCreateOrGetOneToOne = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (targetUserId: string) => {
-      const res = await api.post("/conversations", { targetUserId });
+      // 🌟 ফিক্সড: ব্যাকএন্ডের এন্ডপয়েন্ট /conversations/one-to-one
+      const res = await api.post("/conversations/one-to-one", { targetUserId });
       return res;
     },
     onSuccess: () => {
@@ -40,7 +57,6 @@ const useCreateGroupChat = () => {
   });
 };
 
-// 🌟 ১. গ্রুপে নতুন মেম্বার যুক্ত করার Mutation
 const useAddGroupMember = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -54,7 +70,6 @@ const useAddGroupMember = () => {
   });
 };
 
-// 🌟 ২. গ্রুপ থেকে মেম্বার রিমুভ করার Mutation
 const useRemoveGroupMember = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -68,7 +83,6 @@ const useRemoveGroupMember = () => {
   });
 };
 
-// 🌟 ৩. কাউকে Group Admin বানানোর Mutation
 const useMakeGroupAdmin = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -99,13 +113,29 @@ const useGetMessages = (conversationId: string | null) => {
   });
 };
 
-
 const useSendMessage = () => {
   const queryClient = useQueryClient();
+
   return useMutation({
-    mutationFn: async ({ conversationId, ...payload }: { conversationId: string; body?: string; image?: string; replyToId?: string }) => {
-      const res = await api.post(`/messages/${conversationId}`, payload);
-      return res;
+    mutationFn: async ({
+      conversationId,
+      body,
+      image,
+      replyToId,
+    }: {
+      conversationId: string;
+      body?: string;
+      image?: string;
+      replyToId?: string;
+    }) => {
+      // 🌟 conversationId বডি এবং ইউআরএল দুটিতেই পাস করা হলো
+      const response = await api.post(`/messages/${conversationId}`, {
+        conversationId, // 👈 ব্যাকএন্ডের req.body-তে পাওয়ার জন্য
+        body,
+        image,
+        replyToId,
+      });
+      return response.data;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["messages", variables.conversationId] });
@@ -159,9 +189,9 @@ export const useChat = {
   useSendMessage,
   useGetMessages,
   useCreateGroupChat,
-  useAddGroupMember,     // 👈 Exported
-  useRemoveGroupMember,  // 👈 Exported
-  useMakeGroupAdmin,     // 👈 Exported
+  useAddGroupMember,
+  useRemoveGroupMember,
+  useMakeGroupAdmin,
   useCreateOrGetOneToOne,
   useGetConversations,
   useDeleteMessage,
