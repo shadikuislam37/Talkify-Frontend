@@ -116,24 +116,31 @@ export default function ChatBox({
       );
     };
 
-    const handleStatusChange = (data: { messageId: string; status: string }) => {
-      queryClient.setQueryData(
-        ["messages", conversationId],
-        (oldData: any) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page: Message[]) =>
-              page.map((msg) =>
-                msg.id === data.messageId
-                  ? { ...msg, status: data.status as any }
-                  : msg
-              )
-            ),
-          };
-        }
-      );
-    };
+   const handleStatusChange = (data: { messageId: string; userId: string; status: string }) => {
+    queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
+      if (!oldData) return oldData;
+      return {
+        ...oldData,
+        pages: oldData.pages.map((page: Message[]) =>
+          page.map((msg) => {
+            if (msg.id === data.messageId) {
+              const existingReads = msg.reads || [];
+              const alreadyRead = existingReads.some((r) => String(r.userId) === String(data.userId));
+
+              return {
+                ...msg,
+                status: data.status as any,
+                reads: alreadyRead
+                  ? existingReads
+                  : [...existingReads, { userId: data.userId, readAt: new Date().toISOString() }],
+              };
+            }
+            return msg;
+          })
+        ),
+      };
+    });
+  };
 
     socket.on("receive_message", handleNewMessage);
     socket.on("on_message_status_change", handleStatusChange);
@@ -150,22 +157,25 @@ export default function ChatBox({
 useEffect(() => {
   if (!socket || !conversationId || !currentUserId || messages.length === 0) return;
 
-  // 🔴 ১. শুধু অপজিট ইউজারের পাঠানো মেসেজগুলো ফিল্টার করা (যেগুলো আমার নয় এবং READ হয়নি)
   const incomingUnreadMessages = messages.filter((m) => {
     const msgSenderId = m.senderId || m.sender?.id;
     const isMyMessage = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
     
-    // আমার পাঠানো মেসেজ হলে স্কিপ করব, শুধুমাত্র অন্য ইউজারের মেসেজ রিড মার্ক করব
-    return !isMyMessage && m.status !== "READ";
+    // Check: reads অ্যারেতে আমার ID অলরেডি আছে কিনা
+    const alreadyReadByMe = m.reads?.some((r) => String(r.userId) === String(currentUserId));
+
+    // ১. আমার পাঠানো মেসেজ নয়
+    // ২. স্ট্যাটাস এখনো READ নয়
+    // ৩. আমার আইডি এখনো reads অ্যারেতে যুক্ত হয়নি
+    return !isMyMessage && m.status !== "READ" && !alreadyReadByMe;
   });
 
-  // 🔴 ২. অন্য ইউজারের মেসেজগুলো পড়া হলে তবেই ব্যাকএন্ডে সকেট এমিট পাঠাব
   if (incomingUnreadMessages.length > 0) {
     incomingUnreadMessages.forEach((msg) => {
       socket.emit("update_message_status", {
         messageId: msg.id,
         conversationId,
-        userId: currentUserId, // রিডার হিসেবে আমার আইডি যাচ্ছে
+        userId: currentUserId,
         status: "READ",
       });
     });

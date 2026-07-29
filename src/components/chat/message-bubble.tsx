@@ -53,12 +53,9 @@ export function MessageBubble({
   // 🌟 রিড লজিক ফিক্স: অন্য কোন ইউজার মেসেজটি পড়েছে কি না
   // 🌟 রিড লজিক: অন্য কোনো ইউজার (আমার আইডি ছাড়া) মেসেজটি রিড করেছে কি না
 const isReadByOther = React.useMemo(() => {
-  // যদি ব্যাকএন্ড থেকে reads অ্যারে আসে
   if (msg.reads && Array.isArray(msg.reads) && msg.reads.length > 0) {
     return msg.reads.some((r) => String(r.userId) !== String(currentUserId));
   }
-// ব্যাকএন্ডে যদি reads অ্যারে না থেকে সরাসরি status থাকে
-  // খেয়াল রাখুন: অপজিট ইউজার না দেখলে status READ হওয়া উচিত নয়
   return msg.status === "READ";
 }, [msg.reads, msg.status, currentUserId]);
 
@@ -164,15 +161,15 @@ const isReadByOther = React.useMemo(() => {
             {msg.body && <p className="text-sm font-medium break-words">{msg.body}</p>}
 
             {/* Read / Sent Status Indicator for Sender */}
-            {isMe && (
-              <div className="flex justify-end items-center gap-1 text-[10px] opacity-80 mt-0.5">
-                {isReadByOther ? (
-                  <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold" />
-                ) : (
-                  <Check className="h-3.5 w-3.5 text-muted-foreground" />
-                )}
-              </div>
-            )}
+         {isMe && (
+  <div className="flex justify-end items-center gap-1 text-[10px] opacity-80 mt-0.5">
+    {isReadByOther ? (
+      <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold" />
+    ) : (
+      <Check className="h-3.5 w-3.5 text-muted-foreground" />
+    )}
+  </div>
+)}
           </div>
         </div>
       </div>
