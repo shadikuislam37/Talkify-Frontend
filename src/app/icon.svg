@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Slate Deep Background -->
+    <linearGradient id="slateBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+
+    <!-- Warm Coral Peach Gradient -->
+    <linearGradient id="coralGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B6B" />
+      <stop offset="100%" stop-color="#EE5253" />
+    </linearGradient>
+
+    <!-- Golden Amber Gradient -->
+    <linearGradient id="amberGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF9F43" />
+      <stop offset="100%" stop-color="#FECA57" />
+    </linearGradient>
+
+    <filter id="shadowWarm" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="512" height="512" rx="120" fill="url(#slateBg)"/>
+
+  <!-- Golden Amber Bubble -->
+  <g filter="url(#shadowWarm)">
+    <rect x="110" y="135" width="220" height="160" rx="48" fill="url(#amberGrad)" />
+    <path d="M 145 290 L 110 335 C 125 330 145 310 170 290 Z" fill="url(#amberGrad)" />
+    <circle cx="175" cy="215" r="12" fill="#0F172A" opacity="0.7"/>
+    <circle cx="220" cy="215" r="12" fill="#0F172A" opacity="0.7"/>
+    <circle cx="265" cy="215" r="12" fill="#0F172A" opacity="0.7"/>
+  </g>
+
+  <!-- Sunset Coral Bubble (Overlapping) -->
+  <g filter="url(#shadowWarm)">
+    <rect x="182" y="217" width="220" height="160" rx="48" fill="url(#coralGrad)" />
+    <path d="M 367 372 L 402 417 C 387 412 367 392 342 372 Z" fill="url(#coralGrad)" />
+    <path d="M 232 297 L 352 297" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round"/>
+  </g>
+</svg>

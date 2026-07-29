@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const BACKEND_URL =
-  process.env.BACKEND_URL ?? "https://api.mahinul.tech";
+  process.env.BACKEND_URL ?? "http://localhost:5000";
 
 const nextConfig = {
   reactStrictMode: true,

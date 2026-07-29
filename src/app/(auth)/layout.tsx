@@ -25,8 +25,8 @@ export default function AuthLayout({
         <div className="relative z-10 mt-auto mb-10">
           <blockquote className="space-y-6">
             <p className="text-3xl font-medium leading-relaxed tracking-tight text-zinc-100">
-              "Experience seamless, real-time communication. Connecting with your team has never been this effortless."
-            </p>
+  &quot;Experience seamless, real-time communication. Connecting with your team has never been this effortless.&quot;
+</p>
             <footer className="text-base font-medium text-zinc-400">
               — The ChatApp Team
             </footer>

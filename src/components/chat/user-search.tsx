@@ -1,0 +1,96 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { useChat } from "@/hooks/use-chat";
+import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Search, Loader2 } from "lucide-react";
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  image?: string | null;
+}
+
+interface UserSearchProps {
+  onSelectUser: (user: UserProfile) => void;
+  isLoadingAction?: boolean;
+  placeholder?: string;
+}
+
+export function UserSearch({
+  onSelectUser,
+  isLoadingAction = false,
+  placeholder = "Search user by name or email...",
+}: UserSearchProps) {
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  // Debounce logic (300ms delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // 🌟 Centralized useChat object-এর useSearchUsers ব্যবহার করা হলো
+  const { data: rawUsers = [], isLoading } = useChat.useSearchUsers(debouncedQuery);
+  const users = rawUsers as UserProfile[];
+
+  return (
+    <div className="space-y-4 py-2">
+      {/* Search Input */}
+      <div className="relative">
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder={placeholder}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
+      {/* User Results List */}
+      <div className="max-h-60 overflow-y-auto space-y-1">
+        {isLoading ? (
+          <div className="flex justify-center items-center py-6 text-muted-foreground gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-xs">Searching users...</span>
+          </div>
+        ) : users.length === 0 && debouncedQuery.length > 0 ? (
+          <p className="text-center text-xs text-muted-foreground py-6">
+            No users found.
+          </p>
+        ) : (
+          users.map((user) => (
+            <button
+              key={user.id}
+              type="button"
+              disabled={isLoadingAction}
+              onClick={() => onSelectUser(user)}
+              className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted cursor-pointer transition-colors text-left disabled:opacity-50"
+            >
+              <Avatar className="h-9 w-9">
+                <AvatarImage src={user.image || undefined} />
+                <AvatarFallback>
+                  {user.name ? user.name.slice(0, 2).toUpperCase() : "U"}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 overflow-hidden">
+                <p className="font-medium text-sm truncate">{user.name}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {user.email}
+                </p>
+              </div>
+              {isLoadingAction && (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              )}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
