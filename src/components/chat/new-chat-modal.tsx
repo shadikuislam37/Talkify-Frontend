@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useChat } from "@/hooks/use-chat";
+import { useMessage } from "@/hooks/use-messages";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { UserProfile } from "@/types";
 import { UserSearch } from "./user-search";
+import { useCreateOrGetOneToOne } from "@/hooks/use-conversations";
 
 interface NewChatModalProps {
   onSelectConversation?: (conversationId: string) => void;
@@ -28,7 +29,7 @@ export default function NewChatModal({
   const queryClient = useQueryClient();
 
   const { mutateAsync: createChat, isPending: isCreating } =
-    useChat.useCreateOrGetOneToOne();
+    useCreateOrGetOneToOne();
 
   const handleUserSelect = async (user: UserProfile) => {
     try {

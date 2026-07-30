@@ -12,9 +12,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Users, Search, X } from "lucide-react";
-import { useChat } from "@/hooks/use-chat";
+import { useMessage } from "@/hooks/use-messages";
 import { AuthUser } from "@/types";
 import { CreateGroupInput } from "@/schemas/chat.schema";
+import { useCreateGroupChat } from "@/hooks/use-conversations";
 
 interface CreateGroupModalProps {
   userList?: AuthUser[];
@@ -30,7 +31,7 @@ export default function CreateGroupModal({
   const [searchFilter, setSearchFilter] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
-  const { mutateAsync: createGroup, isPending } = useChat.useCreateGroupChat();
+  const { mutateAsync: createGroup, isPending } = useCreateGroupChat();
 
   const resetForm = () => {
     setGroupName("");

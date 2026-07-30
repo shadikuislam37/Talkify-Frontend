@@ -5,11 +5,11 @@ import { useForm } from "@tanstack/react-form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2, Send, Paperclip, X, FileText, Film, Music } from "lucide-react";
-import { useChatStore } from "@/store/use-chat-store";
-import { useChat } from "@/hooks/use-chat";
+import { useMessage } from "@/hooks/use-messages";
 import { useSocket } from "@/hooks/use-socket";
 import { SendMessageInput, sendMessageSchema } from "@/schemas/chat.schema";
 import Image from "next/image";
+import { useChatStore } from "@/store/use-chat-store";
 
 export const MessageInput = () => {
   const { activeConversationId } = useChatStore();
@@ -24,7 +24,7 @@ export const MessageInput = () => {
     name: string;
   } | null>(null);
 
-  const { mutateAsync: sendMessage, isPending } = useChat.useSendMessage();
+  const { mutateAsync: sendMessage, isPending } = useMessage.useSendMessage();
 
   const form = useForm({
     defaultValues: {

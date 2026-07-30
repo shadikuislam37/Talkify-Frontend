@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { useChat } from "@/hooks/use-chat";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +18,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { AuthUser } from "@/types";
+import { useAddGroupMember, useLeaveGroup, useMakeGroupAdmin, useRemoveGroupMember } from "@/hooks/use-conversations";
 
 interface GroupDetailsModalProps {
   open: boolean;
@@ -45,13 +45,13 @@ export default function GroupDetailsModal({
   const [selectedNewUserIds, setSelectedNewUserIds] = useState<string[]>([]);
 
   const { mutateAsync: removeMember, isPending: isRemoving } =
-    useChat.useRemoveGroupMember();
+    useRemoveGroupMember();
   const { mutateAsync: makeAdmin, isPending: isPromoting } =
-    useChat.useMakeGroupAdmin();
+    useMakeGroupAdmin();
   const { mutateAsync: addMembers, isPending: isAdding } =
-    useChat.useAddGroupMember();
+    useAddGroupMember();
   const { mutateAsync: leaveGroup, isPending: isLeaving } =
-    useChat.useLeaveGroup?.() || { mutateAsync: async () => {} };
+    useLeaveGroup?.() || { mutateAsync: async () => {} };
 
   const isCurrentUserAdmin = currentUserId
     ? adminIds.includes(currentUserId)

@@ -1,12 +1,12 @@
 "use client";
-
+import { useReactionStore } from "@/store/use-reaction-store";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import Image from "next/image";
 import { useForm } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocket } from "@/hooks/use-socket";
-import { useChat } from "@/hooks/use-chat";
-import { Loader2, Send, Paperclip, X, Info, Video } from "lucide-react";
+import { useMessage } from "@/hooks/use-messages";
+import { Loader2, Send, Paperclip, X, Info, Video, Check } from "lucide-react";
 import { sendMessageSchema, SendMessageInput } from "@/schemas/chat.schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -15,8 +15,10 @@ import GroupDetailsModal from "./group-details-modal";
 import { AuthUser, Conversation, Message } from "@/types";
 import MessageBubble from "./message-bubble";
 import { useCallStore } from "@/store/use-call-store";
-import { useOnlineUsers } from "@/hooks/use-online-users"; // 🌟 ১. useOnlineUsers Import
+import { useOnlineUsers } from "@/hooks/use-online-users";
 import { formatLastSeen } from "@/lib/utils";
+import { useEditMessage } from "@/hooks/use-message-edit-delete";
+import { api } from "@/lib/api";
 
 interface ChatBoxProps {
   conversationId: string;
@@ -36,21 +38,16 @@ export default function ChatBox({
   const { socket } = useSocket(conversationId);
   const queryClient = useQueryClient();
 
-  // 🌟 ২. অনলাইন ইউজারের আইডি লিস্ট রিসিভ
   const onlineUsers = useOnlineUsers();
-
-  // Call store trigger
   const startCall = useCallStore((state) => state.startCall);
   const [isGroupDetailsOpen, setIsGroupDetailsOpen] = useState(false);
 
-  // ১-টু-১ চ্যাটের জন্য অপর ইউজার
   const otherUser = React.useMemo(() => {
     if (!conversation || conversation.isGroup) return null;
     const users = conversation.users || [];
     return users.find((u: AuthUser) => u.id !== currentUserId) || users[0];
   }, [conversation, currentUserId]);
 
-  // 🌟 ৩. অপর ইউজার অনলাইন কি না তা চেক করা
   const isOnline = Boolean(otherUser?.id && onlineUsers.has(otherUser.id));
 
   const chatTitle = conversation?.isGroup
@@ -67,25 +64,35 @@ export default function ChatBox({
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useChat.useGetMessages(conversationId);
+  } = useMessage.useGetMessages(conversationId);
 
   const messages: Message[] = React.useMemo(() => {
     const rawList = data?.pages.flatMap((page: unknown) => page as Message[]) ?? [];
     return [...rawList].reverse();
   }, [data]);
 
-  const { mutateAsync: sendMessage, isPending: isSending } = useChat.useSendMessage();
-  const { mutateAsync: markAsRead } = useChat.useMarkMessageAsRead?.() || {
+  const { mutateAsync: sendMessage, isPending: isSending } = useMessage.useSendMessage();
+  const { mutateAsync: markAsRead } = useMessage.useMarkMessageAsRead?.() || {
     mutateAsync: async () => {},
   };
-  const { mutateAsync: deleteMessage } = useChat.useDeleteMessage?.() || {
+  const { mutateAsync: deleteMessage } = useMessage.useDeleteMessage?.() || {
+    mutateAsync: async () => {},
+  };
+  const { mutateAsync: reactToMessage } = useMessage.useReactToMessage();
+  const addOrUpdateReaction = useReactionStore((state) => state.addOrUpdateReaction);
+
+  const { mutateAsync: editMessage } = useEditMessage?.() || {
     mutateAsync: async () => {},
   };
 
   const [typingUsers, setTypingUsers] = useState<{ [userId: string]: string }>({});
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
+
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
 
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -108,7 +115,6 @@ export default function ChatBox({
 
   const handleStartVideoCall = () => {
     if (!otherUser) return;
-
     startCall({
       id: otherUser.id,
       name: otherUser.name || "User",
@@ -124,12 +130,10 @@ export default function ChatBox({
     };
   }, [socket, conversationId]);
 
-  // সকেট মেসেজ লিসেনার
-  // 🌟 সকেট মেসেজ ও রিড স্ট্যাটাস লিসেনার (Fixed for Real-time Blue Tick)
   useEffect(() => {
     if (!socket.connected) {
-    socket.connect();
-  }
+      socket.connect();
+    }
 
     const handleNewMessage = (newMessage: Message) => {
       queryClient.setQueryData(
@@ -157,13 +161,10 @@ export default function ChatBox({
             page.map((msg) => {
               if (msg.id === data.messageId) {
                 const existingReads = msg.reads || [];
-                
-                // ১. ইতিমধ্যেই এই ইউজার রিড করেছে কি না চেক
                 const alreadyRead = readerUserId 
-                  ? existingReads.some((r) => String(r.userId) === String(readerUserId))
+                  ? existingReads.some((r: any) => String(r.userId) === String(readerUserId))
                   : false;
 
-                // ২. নতুন রিড অবজেক্ট তৈরি
                 const updatedReads = alreadyRead || !readerUserId
                   ? existingReads
                   : [...existingReads, { id: Math.random().toString(), messageId: msg.id, userId: readerUserId, readAt: new Date().toISOString() }];
@@ -171,7 +172,7 @@ export default function ChatBox({
                 return {
                   ...msg,
                   status: data.status as any,
-                  reads: updatedReads, // 🌟 মেসেজের reads অ্যারে আপডেট করা হলো
+                  reads: updatedReads,
                 };
               }
               return msg;
@@ -181,49 +182,53 @@ export default function ChatBox({
       });
     };
 
+    const handleReceiveReaction = (data: { messageId: string; reaction: any }) => {
+      addOrUpdateReaction(data.messageId, data.reaction);
+    };
+
     socket.on("receive_message", handleNewMessage);
     socket.on("on_message_status_change", handleStatusChange);
     socket.on("message_read", handleStatusChange);
+    socket.on("receive_reaction", handleReceiveReaction);
 
     return () => {
       socket.off("receive_message", handleNewMessage);
       socket.off("on_message_status_change", handleStatusChange);
       socket.off("message_read", handleStatusChange);
+      socket.off("receive_reaction", handleReceiveReaction);
     };
-  }, [socket, conversationId, queryClient]);
+  }, [socket, conversationId, queryClient, addOrUpdateReaction]);
 
-  // 🌟 ৪. আনরিড মেসেজ রিড ট্র্রিগার (DB + Socket Sync)
- useEffect(() => {
-  if (!conversationId || !currentUserId || messages.length === 0) return;
+  useEffect(() => {
+    if (!conversationId || !currentUserId || messages.length === 0) return;
 
-  const incomingUnreadMessages = messages.filter((m) => {
-    const msgSenderId = m.senderId || m.sender?.id;
-    const isMyMessage = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
-    const alreadyReadByMe = m.reads?.some((r) => String(r.userId) === String(currentUserId));
+    const incomingUnreadMessages = messages.filter((m) => {
+      const msgSenderId = m.senderId || m.sender?.id;
+      const isMyMessage = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
+      const alreadyReadByMe = m.reads?.some((r: any) => String(r.userId) === String(currentUserId));
 
-    return !isMyMessage && m.status !== "READ" && !alreadyReadByMe;
-  });
-
-  if (incomingUnreadMessages.length > 0) {
-    incomingUnreadMessages.forEach(async (msg) => {
-      try {
-        await markAsRead({ messageId: msg.id, conversationId });
-      } catch (err) {
-        // Silent Fail
-      }
-
-      if (socket && socket.connected) {
-        socket.emit("update_message_status", {
-          messageId: msg.id,
-          conversationId,
-          userId: currentUserId,
-          status: "READ",
-        });
-      }
+      return !isMyMessage && m.status !== "READ" && !alreadyReadByMe;
     });
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [conversationId, currentUserId, messages.length, markAsRead, socket]);
+
+    if (incomingUnreadMessages.length > 0) {
+      incomingUnreadMessages.forEach(async (msg) => {
+        try {
+          await markAsRead({ messageId: msg.id, conversationId });
+        } catch (err) {
+          // Silent Fail
+        }
+
+        if (socket && socket.connected) {
+          socket.emit("update_message_status", {
+            messageId: msg.id,
+            conversationId,
+            userId: currentUserId,
+            status: "READ",
+          });
+        }
+      });
+    }
+  }, [conversationId, currentUserId, messages, markAsRead, socket]);
 
   const handleObserver = useCallback(
     (entries: IntersectionObserverEntry[]) => {
@@ -254,18 +259,32 @@ export default function ChatBox({
     }
   }, [messages.length, typingUsers]);
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await api.post("/media/upload", formData);
+      const data = res.data;
+
+      if (data.success) {
+        setSelectedImage(data.data.fileUrl);
+      } else {
+        alert(data.message || "File upload failed!");
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      alert("Something went wrong while uploading!");
+    } finally {
+      setIsUploading(false);
+      e.target.value = "";
     }
   };
 
-  // টাইপিং লিসেনার
   useEffect(() => {
     if (!socket) return;
 
@@ -297,7 +316,6 @@ export default function ChatBox({
     };
   }, [socket, conversationId, currentUserId]);
 
-  // TanStack Form
   const form = useForm({
     defaultValues: {
       body: "",
@@ -354,12 +372,35 @@ export default function ChatBox({
     }
   };
 
+const handleSaveEdit = async (messageId: string) => {
+  if (!editText.trim()) return;
+  try {
+    // 🌟 ব্যাকএন্ডের এডিট রাউট অনুযায়ী এখানে এপিআই কল করা হলো
+    await api.patch(`/messages/edit/${messageId}`, { newBody: editText.trim() });
+
+    setEditingMessageId(null);
+    setEditText("");
+    
+    // মেসেজ লিস্ট রিফ্রেশ করার জন্য কুয়েরি ইনভ্যালিডেট করা
+    queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
+  } catch (err) {
+    console.error("Failed to edit message:", err);
+  }
+};
+
   const confirmDeleteMessage = async () => {
     if (!deletingMessageId) return;
 
     try {
       setIsDeleting(true);
       await deleteMessage(deletingMessageId);
+
+      if (socket && conversation?.id) {
+        socket.emit("delete_message_everyone", {
+          messageId: deletingMessageId,
+          conversationId: conversation.id,
+        });
+      }
 
       queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
         if (!oldData) return oldData;
@@ -381,9 +422,9 @@ export default function ChatBox({
   const typingUserNames = Object.values(typingUsers);
 
   return (
-    <div className="flex flex-col h-full border rounded-md p-4 bg-background relative">
+    <div className="flex flex-col h-full overflow-hidden border rounded-md bg-background relative">
       {/* CHAT HEADER SECTION */}
-      <div className="flex items-center justify-between border-b pb-3 mb-3">
+      <div className="flex items-center justify-between border-b p-4 shrink-0">
         <div 
           onClick={() => {
             if (conversation?.isGroup) {
@@ -399,7 +440,6 @@ export default function ChatBox({
                 {chatTitle ? chatTitle.slice(0, 2).toUpperCase() : "CU"}
               </AvatarFallback>
             </Avatar>
-            {/* 🌟 ৫. অনলাইন হলে গ্রিন ডট ব্যাজ দেখানো */}
             {!conversation?.isGroup && isOnline && (
               <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />
             )}
@@ -412,12 +452,9 @@ export default function ChatBox({
                 {conversation?.users?.length || 0} members • Click for info
               </p>
             ) : (
-              // 🌟 ৬. হেডার টেক্সটে অনলাইন স্ট্যাটাস দেখানো
               <p className={`text-[11px] ${isOnline ? "text-green-600 font-medium" : "text-muted-foreground"}`}>
-      {isOnline 
-        ? "Online" 
-        : formatLastSeen(otherUser?.lastSeen)}
-    </p>
+                {isOnline ? "Online" : formatLastSeen(otherUser?.lastSeen)}
+              </p>
             )}
           </div>
         </div>
@@ -453,7 +490,7 @@ export default function ChatBox({
       </div>
 
       {/* MESSAGES LIST AREA */}
-      <div className="flex-1 overflow-y-auto mb-4 pr-1 flex flex-col">
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col justify-end min-h-0">
         <div ref={observerTargetRef} className="h-2 w-full">
           {isFetchingNextPage && (
             <div className="flex justify-center py-2">
@@ -463,27 +500,84 @@ export default function ChatBox({
         </div>
 
         {isLoading ? (
-          <div className="flex justify-center items-center py-10 text-muted-foreground gap-2 my-auto">
+          <div className="flex justify-center py-10 text-muted-foreground gap-2 m-auto">
             <Loader2 className="h-4 w-4 animate-spin" />
             <span className="text-sm">Loading chat...</span>
           </div>
         ) : messages.length === 0 ? (
-          <p className="text-center text-muted-foreground text-sm py-10 my-auto">
+          <p className="text-center text-muted-foreground text-sm m-auto">
             No messages yet. Say hi! 👋
           </p>
         ) : (
-          <div className="flex flex-col space-y-3 mt-auto">
+          <div className="flex flex-col space-y-3">
             {messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                msg={msg}
-                currentUserId={currentUserId}
-                isGroup={Boolean(conversation?.isGroup)}
-                highlightedMsgId={highlightedMsgId}
-                onReply={(m) => setReplyingTo(m)}
-                onDelete={(id) => setDeletingMessageId(id)}
-                onScrollToReply={scrollToMessage}
-              />
+              <div key={msg.id} className="group relative">
+                <MessageBubble
+                  msg={msg}
+                  currentUserId={currentUserId}
+                  isGroup={Boolean(conversation?.isGroup)}
+                  highlightedMsgId={highlightedMsgId}
+                  onReply={(m) => setReplyingTo(m)}
+                  onEdit={(id, currentText) => {
+                    setEditingMessageId(id);
+                    setEditText(currentText);
+                  }}
+      
+                  onDelete={(id) => {
+                    setDeletingMessageId(id);
+                  }}
+
+                  
+   onDeleteForMe={async (msgId) => {
+    try {
+      await api.post(`/messages/delete-for-me/${msgId}`);
+
+      queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page: Message[]) =>
+            page.filter((m) => m.id !== msgId)
+          ),
+        };
+      });
+    } catch (err) {
+      console.error("Failed to delete message for me:", err);
+    }
+  }}
+                  onReaction={async (msgId, emoji) => {
+                    try {
+                      await reactToMessage({ messageId: msgId, emoji });
+                      if (socket && conversation?.id) {
+                        socket.emit("send_reaction", {
+                          messageId: msgId,
+                          conversationId: conversation.id,
+                          emoji,
+                        });
+                      }
+                    } catch (err) {
+                      console.error("Failed to react:", err);
+                    }
+                  }}
+                  onScrollToReply={scrollToMessage}
+                />
+
+                {editingMessageId === msg.id ? (
+                  <div className="flex items-center gap-2 mt-1 px-2">
+                    <Input
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      className="h-8 text-xs"
+                    />
+                    <Button size="sm" onClick={() => handleSaveEdit(msg.id)} className="h-8 px-2">
+                      <Check className="h-3 w-3" />
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setEditingMessageId(null)} className="h-8 px-2">
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
             ))}
           </div>
         )}
@@ -503,7 +597,7 @@ export default function ChatBox({
 
       {/* Reply Preview Above Input */}
       {replyingTo && (
-        <div className="flex items-center justify-between p-2 bg-muted/80 rounded-t-md border-b text-xs mb-1 border-l-4 border-l-primary">
+        <div className="flex items-center justify-between p-2 bg-muted/80 border-t text-xs shrink-0">
           <div className="truncate pr-2">
             <span className="font-bold text-primary block">
               Replying to {replyingTo.senderId === currentUserId ? "yourself" : replyingTo.sender?.name || "user"}
@@ -524,7 +618,7 @@ export default function ChatBox({
 
       {/* Selected Image Preview */}
       {selectedImage && (
-        <div className="relative w-16 h-16 mb-2 border rounded-md overflow-hidden bg-muted">
+        <div className="relative w-16 h-16 m-2 border rounded-md overflow-hidden bg-muted shrink-0">
           <Image
             src={selectedImage}
             alt="Preview of uploaded image"
@@ -551,11 +645,15 @@ export default function ChatBox({
           e.stopPropagation();
           form.handleSubmit();
         }}
-        className="flex gap-2 items-center"
+        className="flex gap-2 items-center p-4 border-t shrink-0 bg-background"
       >
         <label className="cursor-pointer p-2 hover:bg-muted rounded-md text-muted-foreground transition-colors flex items-center justify-center">
-          <Paperclip className="h-4 w-4" />
-          <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
+          {isUploading ? (
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          ) : (
+            <Paperclip className="h-4 w-4" />
+          )}
+          <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={isUploading} />
         </label>
 
         <form.Field name="body">
@@ -577,7 +675,7 @@ export default function ChatBox({
           )}
         </form.Field>
 
-        <Button type="submit" disabled={isSending} size="icon" className="h-10 w-10">
+        <Button type="submit" disabled={isSending || isUploading} size="icon" className="h-10 w-10">
           {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </form>

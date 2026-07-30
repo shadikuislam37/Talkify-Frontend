@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useChat } from "@/hooks/use-chat";
+import { useMessage } from "@/hooks/use-messages";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, Loader2, X } from "lucide-react";
 import { UserProfile } from "@/types";
+import { useSearchUsers } from "@/hooks/use-user-features";
 
 interface UserSearchProps {
   onSelectUser: (user: UserProfile) => void;
@@ -30,7 +31,7 @@ export function UserSearch({
     return () => clearTimeout(timer);
   }, [query]);
 
-  const { data: rawUsers = [], isLoading } = useChat.useSearchUsers(debouncedQuery);
+  const { data: rawUsers = [], isLoading } = useSearchUsers(debouncedQuery);
 
   const users = (rawUsers as UserProfile[]).filter(
     (user) => !excludeUserIds.includes(user.id)

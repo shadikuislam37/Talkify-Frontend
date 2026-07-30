@@ -1,14 +1,13 @@
 "use client";
-
-import React from "react";
+import { useReactionStore } from "@/store/use-reaction-store";
+import React, { useState } from "react";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Check, CheckCheck, CornerUpLeft, Reply, Smile, Trash2 } from "lucide-react";
+import { Check, CheckCheck, CornerUpLeft, Edit2, Reply, Smile, Trash2 } from "lucide-react";
 import { Message } from "@/types";
 import { formatTime } from "@/lib/utils";
 
-const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "😤"];
 
 interface MessageBubbleProps {
   msg: Message;
@@ -16,6 +15,7 @@ interface MessageBubbleProps {
   isGroup?: boolean;
   highlightedMsgId?: string | null;
   onReply?: (msg: Message) => void;
+  onEdit?: (msgId: string, currentBody: string) => void;
   onDelete?: (msgId: string) => void; 
   onDeleteForMe?: (msgId: string) => void; 
   onReaction?: (msgId: string, emoji: string) => void; 
@@ -28,6 +28,7 @@ export function MessageBubble({
   isGroup = false,
   highlightedMsgId,
   onReply,
+  onEdit,
   onDelete,
   onDeleteForMe,
   onReaction,
@@ -37,12 +38,14 @@ export function MessageBubble({
   const isMe = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
   const isHighlighted = highlightedMsgId === msg.id;
 
-  // 🌟 READ STATUS LOGIC FIX
-  const isReadByOther = React.useMemo(() => {
-    // ১. নিজের পাঠানো মেসেজ না হলে ব্লু টিক হিসাব হবে না
-    if (!isMe) return false;
+  const reactionsMap = useReactionStore((state) => state.reactionsMap);
+  const currentReactions = reactionsMap[msg.id] || msg.reactions || [];
 
-    // ২. যদি reads অ্যারেতে অন্য কোনো ইউজারের ID পাওয়া যায়
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [showDeleteMenu, setShowDeleteMenu] = useState(false);
+
+  const isReadByOther = React.useMemo(() => {
+    if (!isMe) return false;
     if (msg.reads && Array.isArray(msg.reads) && msg.reads.length > 0) {
       const hasOtherRead = msg.reads.some((r) => {
         const readerId = typeof r === "string" ? r : r.userId;
@@ -50,8 +53,6 @@ export function MessageBubble({
       });
       if (hasOtherRead) return true;
     }
-
-    // ৩. মেসেজের স্ট্যাটাস 'READ' হলে
     return msg.status === "READ";
   }, [msg.reads, msg.status, currentUserId, isMe]);
 
@@ -62,7 +63,6 @@ export function MessageBubble({
         isHighlighted ? "bg-primary/20 ring-2 ring-primary/40" : ""
       } ${isMe ? "items-end" : "items-start"}`}
     >
-      {/* "X replied to Y" Header */}
       {msg.replyTo && (
         <div
           onClick={() => {
@@ -101,29 +101,47 @@ export function MessageBubble({
           }`}
         >
           {onReaction && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  title="React"
-                  className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
-                >
-                  <Smile className="h-3.5 w-3.5" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="flex gap-1 p-1 w-auto rounded-full" side="top">
-                {EMOJIS.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    onClick={() => onReaction(msg.id, emoji)}
-                    className="hover:bg-muted p-1 rounded-full text-base transition-transform hover:scale-125"
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </PopoverContent>
-            </Popover>
+            <div className="relative">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setShowReactionPicker(!showReactionPicker)}
+                title="React"
+                className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors cursor-pointer inline-flex items-center justify-center"
+              >
+                <Smile className="h-3.5 w-3.5" />
+              </div>
+
+              {showReactionPicker && (
+                <div className={`absolute bottom-full mb-1 z-50 flex items-center gap-1.5 p-1.5 rounded-full shadow-lg bg-background border ${isMe ? "right-0" : "left-0"}`}>
+                  {EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => {
+                        onReaction(msg.id, emoji);
+                        setShowReactionPicker(false);
+                      }}
+                      className="hover:bg-muted p-1.5 rounded-full text-base transition-transform hover:scale-125 focus:outline-none cursor-pointer"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Edit Button */}
+          {isMe && onEdit && (
+            <button
+              type="button"
+              onClick={() => onEdit(msg.id, msg.body || "")}
+              title="Edit message"
+              className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
+            >
+              <Edit2 className="h-3.5 w-3.5" />
+            </button>
           )}
 
           {onReply && (
@@ -137,53 +155,74 @@ export function MessageBubble({
             </button>
           )}
 
-          {onDeleteForMe && (
-            <button
-              type="button"
-              onClick={() => onDeleteForMe(msg.id)}
-              title="Delete for me"
-              className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          )}
+          {/* Single Delete Dropdown Menu */}
+          {isMe && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowDeleteMenu(!showDeleteMenu)}
+                title="Delete options"
+                className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
 
-          {isMe && onDelete && (
-            <button
-              type="button"
-              onClick={() => onDelete(msg.id)}
-              title="Delete for everyone"
-              className="p-1 hover:bg-muted rounded text-red-500 transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+              {showDeleteMenu && (
+                <div className={`absolute bottom-full mb-1 z-50 flex flex-col py-1 w-36 rounded-md shadow-lg bg-background border ${isMe ? "right-0" : "left-0"}`}>
+                  {onDelete && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDelete(msg.id);
+                        setShowDeleteMenu(false);
+                      }}
+                      className="text-left px-3 py-1.5 text-xs hover:bg-muted text-red-500 transition-colors cursor-pointer font-medium"
+                    >
+                      Delete for Everyone
+                    </button>
+                  )}
+
+                  {onDeleteForMe && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDeleteForMe(msg.id);
+                        setShowDeleteMenu(false);
+                      }}
+                      className="text-left px-3 py-1.5 text-xs hover:bg-muted text-foreground transition-colors cursor-pointer"
+                    >
+                      Delete for Me
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
         <div className="flex flex-col max-w-[70%] relative">
-          {/* Group Chat Header Name */}
           {isGroup && !isMe && msg.sender?.name && (
             <span className="text-[11px] font-semibold text-primary mb-0.5 ml-1">
               {msg.sender.name}
             </span>
           )}
 
-          {/* Parent Reply Body Preview */}
           {msg.replyTo && (
             <div
               onClick={() => {
                 const targetId = msg.replyToId || msg.replyTo?.id;
                 if (targetId && onScrollToReply) onScrollToReply(targetId);
               }}
-              className={`cursor-pointer text-xs p-2.5 rounded-2xl mb-1 bg-muted/80 hover:bg-muted text-muted-foreground transition-colors truncate border border-border/50 ${
-                isMe ? "self-end rounded-br-none" : "self-start rounded-bl-none"
+              className={`cursor-pointer text-xs p-2 rounded-xl mb-1.5 border truncate ${
+                isMe
+                  ? "bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground/90"
+                  : "bg-background/60 border-border/60 text-muted-foreground"
               }`}
             >
-              <p className="truncate opacity-90">{msg.replyTo.body || "Attachment"}</p>
+              <p className="truncate text-[11px] opacity-90">{msg.replyTo.body || "Attachment"}</p>
             </div>
           )}
 
-          {/* Main Message Bubble Body */}
           <div
             className={`p-2.5 rounded-2xl border space-y-1 relative ${
               isMe
@@ -225,15 +264,14 @@ export function MessageBubble({
             </div>
           </div>
 
-          {/* Reactions Badges */}
-          {msg.reactions && msg.reactions.length > 0 && (
+          {currentReactions.length > 0 && (
             <div
               className={`absolute -bottom-2 ${
                 isMe ? "right-2" : "left-2"
               } bg-background border rounded-full px-1.5 py-0.5 text-xs shadow flex items-center gap-1 z-10`}
             >
-              {msg.reactions.map((r: any) => (
-                <span key={r.id || r.emoji}>{r.emoji}</span>
+              {currentReactions.map((r: any) => (
+                <span key={r.id || r.userId || r.emoji}>{r.emoji}</span>
               ))}
             </div>
           )}
