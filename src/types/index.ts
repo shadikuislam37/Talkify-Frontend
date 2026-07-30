@@ -2,10 +2,11 @@ import { buttonVariants } from "@/components/ui/button";
 import { VariantProps } from "class-variance-authority";
 
 // ==========================================
-// ১. Enums
+// ১. Enums (Prisma Schema থেকে)
 // ==========================================
 export type MessageStatus = "SENT" | "DELIVERED" | "READ";
 export type Role = "ADMIN" | "USER";
+export type FriendRequestStatus = "PENDING" | "ACCEPTED" | "REJECTED"; // 🌟 Prisma Enum যুক্ত করা হলো
 
 // ==========================================
 // ২. User Interfaces
@@ -20,18 +21,42 @@ export interface AuthUser {
   emailVerified?: boolean;
   phoneVerified?: boolean;
   isActiveStatusVisible?: boolean;
+  isOnline?: boolean; // 🌟 Prisma Field
+  publicKey?: string | null; // 🌟 Prisma Field
+  fcmToken?: string | null; // 🌟 Prisma Field
+  twoFactorEnabled?: boolean | null; // 🌟 Prisma Field
   lastSeen?: string | Date;
   createdAt?: string | Date;
   updatedAt?: string | Date;
+
+  // Relations (অপাওয়ালে ফ্রন্টএন্ডে ইউজার ডিটেইলস হ্যান্ডেল করার জন্য)
+  blockedUsers?: AuthUser[];
+  blockedBy?: AuthUser[];
+  sentFriendRequests?: FriendRequest[];
+  receivedFriendRequests?: FriendRequest[];
 }
 
-// রি-ইউজেবিলিটির জন্য টাইপ অ্যালিয়াস (Aliases)
+// রি-ইউজেবিলিটির জন্য টাইপ অ্যালিয়াস (Aliases)
 export type User = AuthUser;
 export type UserProfile = AuthUser;
 export type ConversationUser = AuthUser;
 
 // ==========================================
-// ৩. Reaction & Read Receipt Interfaces
+// ৩. Friend Request Interface (🌟 নতুন মডেল অনুযায়ী)
+// ==========================================
+export interface FriendRequest {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  status: FriendRequestStatus;
+  createdAt: string | Date;
+
+  sender?: AuthUser;
+  receiver?: AuthUser;
+}
+
+// ==========================================
+// ৪. Reaction & Read Receipt Interfaces
 // ==========================================
 export interface Reaction {
   id: string;
@@ -50,7 +75,7 @@ export interface MessageRead {
 }
 
 // ==========================================
-// ৪. Message Interface
+// ৫. Message Interface
 // ==========================================
 export interface Message {
   id: string;
@@ -75,19 +100,22 @@ export interface Message {
   } | Message | null;
   replies?: Message[];
 
+  // 🌟 Delete For Me Support
+  deletedForUsers?: AuthUser[];
+
   // Reactions & Read Receipts
   reactions?: Reaction[];
   reads?: MessageRead[];
 }
 
 // ==========================================
-// ৫. Conversation Interface
+// ৬. Conversation Interface
 // ==========================================
 export interface Conversation {
   id: string;
   name?: string | null;
   isGroup?: boolean;
-  image?: string | null; // 🌟 এখানে image যোগ করুন
+  image?: string | null;
   adminIds?: string[];
   createdAt?: string | Date;
   updatedAt?: string | Date;
@@ -99,10 +127,26 @@ export interface Conversation {
 }
 
 // ==========================================
-// ৬. UI Related Props
+// ৭. UI & WebRTC Call Props
 // ==========================================
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+}
+
+export interface CallState {
+  isCalling: boolean;
+  incomingCall: {
+    from: string;
+    name: string;
+    sdp: any;
+    isVideo?: boolean;
+  } | null;
+  callActive: boolean;
+  targetUser: { id: string; name: string; image?: string } | null;
+  setIncomingCall: (call: CallState["incomingCall"]) => void;
+  startCall: (targetUser: CallState["targetUser"]) => void;
+  acceptCall: () => void;
+  endCall: () => void;
 }

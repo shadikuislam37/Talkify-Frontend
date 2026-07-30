@@ -7,13 +7,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, Loader2, X } from "lucide-react";
 import { UserProfile } from "@/types";
 
-
-
 interface UserSearchProps {
   onSelectUser: (user: UserProfile) => void;
   isLoadingAction?: boolean;
   placeholder?: string;
-  excludeUserIds?: string[]; // 🌟 নির্দিষ্ট ইউজারদের (যেমন: নিজেকে বা অলরেডি যুক্ত হওয়া মেম্বারদের) লিস্ট থেকে হাইড করার জন্য
+  excludeUserIds?: string[];
 }
 
 export function UserSearch({
@@ -25,7 +23,6 @@ export function UserSearch({
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
-  // Debounce logic (300ms delay)
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(query.trim());
@@ -33,10 +30,8 @@ export function UserSearch({
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Centralized useChat object-এর useSearchUsers
   const { data: rawUsers = [], isLoading } = useChat.useSearchUsers(debouncedQuery);
 
-  // 🌟 এক্সক্লুড করা আইডিগুলো বাদ দিয়ে লিস্ট ফিল্টার করা
   const users = (rawUsers as UserProfile[]).filter(
     (user) => !excludeUserIds.includes(user.id)
   );

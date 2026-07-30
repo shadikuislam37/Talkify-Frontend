@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/use-auth-store";
+import { useOnlineUsers } from "@/hooks/use-online-users"; // 🌟 ১. অনলাইন ইউজার হুক ইমপোর্ট
 
 interface ChatLayoutProps {
   currentUserId?: string;
@@ -33,7 +34,9 @@ export const ChatLayout = ({
   const currentUserEmail = session?.user?.email || "";
   const currentUserImage = session?.user?.image || "";
 
-  // 🌟 Logout Handler
+  // 🌟 ২. অনলাইন ইউজারদের ট্র্যাক করার হুক
+  const onlineUsers = useOnlineUsers();
+
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
@@ -53,13 +56,14 @@ export const ChatLayout = ({
     }
   };
 
-  // ১. কনভারসেশন ফেচিং
   const { data: conversations = [], isLoading } = useChat.useGetConversations();
 
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
 
   const activeConversationId =
-    selectedConversationId ?? (conversations.length > 0 ? conversations[0].id : "");
+    selectedConversationId === ""
+      ? ""
+      : selectedConversationId ?? (conversations.length > 0 ? conversations[0].id : "");
 
   const activeConversation = conversations.find(
     (c: Conversation) => c.id === activeConversationId
@@ -85,13 +89,13 @@ export const ChatLayout = ({
           activeConversationId ? "hidden md:flex" : "flex"
         }`}
       >
-        {/* 🌟 1. User Info Header & Logout Button */}
+        {/* User Info Header & Logout Button */}
         <div className="p-3 border-b flex items-center justify-between bg-muted/30">
           <div className="flex items-center gap-2.5 min-w-0">
             <Avatar className="h-9 w-9 border">
               <AvatarImage src={currentUserImage} alt={currentUserName} />
               <AvatarFallback className="text-xs font-semibold">
-                {currentUserName.slice(0, 2).toUpperCase()}
+                {currentUserName ? currentUserName.slice(0, 2).toUpperCase() : "CU"}
               </AvatarFallback>
             </Avatar>
             <div className="flex flex-col min-w-0">
@@ -120,7 +124,7 @@ export const ChatLayout = ({
           </Button>
         </div>
 
-        {/* 🌟 2. Chats Header + Actions */}
+        {/* Chats Header + Actions */}
         <div className="p-3 border-b flex justify-between items-center bg-background">
           <h2 className="font-bold text-base">Chats</h2>
           <div className="flex items-center gap-1">
@@ -128,7 +132,10 @@ export const ChatLayout = ({
               currentUserId={currentUserId}
               onSelectConversation={(id) => setSelectedConversationId(id)}
             />
-            <CreateGroupModal userList={allAvailableUsers} />
+            <CreateGroupModal
+              userList={allAvailableUsers}
+              currentUserId={currentUserId}
+            />
           </div>
         </div>
 

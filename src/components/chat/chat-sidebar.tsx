@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useOnlineUsers } from "@/hooks/use-online-users";
 import { Conversation } from "@/types";
 import { formatTime } from "@/lib/utils";
-
+import { Users } from "lucide-react";
 
 interface ChatSidebarProps {
   conversations: Conversation[];
@@ -23,9 +23,6 @@ export default function ChatSidebar({
   const onlineUsers = useOnlineUsers();
   const safeConversations = Array.isArray(conversations) ? conversations : [];
 
-  // সময় ফরম্যাট করার হেল্পার ফাংশন
-
-
   return (
     <div className="w-full h-full flex flex-col bg-background">
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -40,24 +37,38 @@ export default function ChatSidebar({
               ? usersList.find((u) => u.id !== currentUserId) || usersList[0]
               : usersList[0];
 
+            // ১-টু-১ চ্যাটের জন্য অনলাইন স্ট্যাটাস
             const isOnline = !conv.isGroup && otherUser?.id && onlineUsers.has(otherUser.id);
 
             const chatName = conv.isGroup
               ? conv.name || "Group Chat"
               : otherUser?.name || conv.name || "Unknown User";
 
+            // 🌟 গ্রুপের ক্ষেত্রে ছবি থাকলে conv.image, অন্যথা ১-টু-১ యూজারের ছবি
+            const avatarImage = conv.isGroup ? conv.image : otherUser?.image;
+
             const lastMsgObj = conv.messages?.[0];
-            const lastMessageText = lastMsgObj
-              ? lastMsgObj.body || (lastMsgObj.image ? "📷 Photo" : "")
-              : "No messages yet";
+            
+            // 🌟 গ্রুপের লাস্ট মেসেজে প্রেরকের নাম যোগ করা (যেমন: "Karim: Hello")
+            let lastMessageText = "No messages yet";
+            if (lastMsgObj) {
+              const senderName =
+                lastMsgObj.senderId === currentUserId
+                  ? "You"
+                  : lastMsgObj.sender?.name?.split(" ")[0] || "Someone";
+
+              const content = lastMsgObj.body || (lastMsgObj.image ? "📷 Photo" : "");
+
+              lastMessageText = conv.isGroup
+                ? `${senderName}: ${content}`
+                : content;
+            }
 
             // আনরিড মেসেজ চেক
             const isUnread =
               lastMsgObj &&
               lastMsgObj.senderId !== currentUserId &&
-              !lastMsgObj.reads?.some((r) => r.userId === currentUserId);
-
-            const avatarImage = conv.isGroup ? undefined : otherUser?.image;
+              !lastMsgObj.reads?.some((r) => String(r.userId) === String(currentUserId));
 
             return (
               <button
@@ -73,10 +84,17 @@ export default function ChatSidebar({
                 <div className="relative">
                   <Avatar className="h-10 w-10">
                     {avatarImage && <AvatarImage src={avatarImage} alt={chatName} />}
-                    <AvatarFallback className="text-xs font-semibold">
-                      {chatName ? chatName.slice(0, 2).toUpperCase() : "CU"}
+                    <AvatarFallback className="text-xs font-semibold bg-muted">
+                      {conv.isGroup ? (
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                      ) : chatName ? (
+                        chatName.slice(0, 2).toUpperCase()
+                      ) : (
+                        "CU"
+                      )}
                     </AvatarFallback>
                   </Avatar>
+                  
                   {isOnline && (
                     <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-green-500 ring-2 ring-background" />
                   )}
@@ -92,6 +110,7 @@ export default function ChatSidebar({
                       </span>
                     )}
                   </div>
+                  
                   <div className="flex justify-between items-center gap-1">
                     <p
                       className={`text-xs truncate ${

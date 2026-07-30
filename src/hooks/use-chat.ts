@@ -1,26 +1,24 @@
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
+// hooks/use-chat.ts
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  useInfiniteQuery,
+} from "@tanstack/react-query";
 import { api, asArray } from "@/lib/api";
-
-
 import { useSyncExternalStore } from "react";
 import { useChatStore } from "@/store/use-chat-store";
-import { Conversation } from "@/types";
+import { Conversation, Message, User } from "@/types";
 
-
-
-
-
-// Hydration স্টেট ট্র্যাক করার জন্য হেলপার
 const emptySubscribe = () => () => {};
 
-export const useAuth = () => {
+export const useChatHydration = () => {
   const store = useChatStore();
 
-  // Client-side রেন্ডারে true এবং Server-side-এ false রিটার্ন করবে (কোনো Effect ছাড়া)
   const isHydrated = useSyncExternalStore(
     emptySubscribe,
-    () => true,  // Client snapshot
-    () => false  // Server snapshot
+    () => true,
+    () => false
   );
 
   return {
@@ -29,10 +27,10 @@ export const useAuth = () => {
   };
 };
 
+// ==========================================
+// 1. CONVERSATION HOOKS
+// ==========================================
 
-
-
-// --- CONVERSATIONS ---
 const useGetConversations = () => {
   return useQuery<Conversation[]>({
     queryKey: ["conversations"],
@@ -47,7 +45,6 @@ const useCreateOrGetOneToOne = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (targetUserId: string) => {
-      // 🌟 ফিক্সড: ব্যাকএন্ডের এন্ডপয়েন্ট /conversations/one-to-one
       const res = await api.post("/conversations/one-to-one", { targetUserId });
       return res;
     },
@@ -60,8 +57,32 @@ const useCreateOrGetOneToOne = () => {
 const useCreateGroupChat = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { name: string; userIds: string[] }) => {
+    mutationFn: async (data: { name: string; userIds: string[]; image?: string }) => {
       const res = await api.post("/conversations/group", data);
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+};
+
+const useUpdateGroupDetails = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      conversationId,
+      name,
+      image,
+    }: {
+      conversationId: string;
+      name?: string;
+      image?: string;
+    }) => {
+      const res = await api.patch(`/conversations/${conversationId}`, {
+        name,
+        image,
+      });
       return res;
     },
     onSuccess: () => {
@@ -73,8 +94,16 @@ const useCreateGroupChat = () => {
 const useAddGroupMember = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ conversationId, userIds }: { conversationId: string; userIds: string[] }) => {
-      const res = await api.patch(`/conversations/${conversationId}/members`, { userIds });
+    mutationFn: async ({
+      conversationId,
+      userIds,
+    }: {
+      conversationId: string;
+      userIds: string[];
+    }) => {
+      const res = await api.patch(`/conversations/${conversationId}/members`, {
+        userIds,
+      });
       return res;
     },
     onSuccess: () => {
@@ -86,8 +115,29 @@ const useAddGroupMember = () => {
 const useRemoveGroupMember = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ conversationId, targetUserId }: { conversationId: string; targetUserId: string }) => {
-      const res = await api.delete(`/conversations/${conversationId}/members/${targetUserId}`);
+    mutationFn: async ({
+      conversationId,
+      targetUserId,
+    }: {
+      conversationId: string;
+      targetUserId: string;
+    }) => {
+      const res = await api.delete(
+        `/conversations/${conversationId}/members/${targetUserId}`
+      );
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+};
+
+const useLeaveGroup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      const res = await api.post(`/conversations/${conversationId}/leave`);
       return res;
     },
     onSuccess: () => {
@@ -99,8 +149,16 @@ const useRemoveGroupMember = () => {
 const useMakeGroupAdmin = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ conversationId, targetUserId }: { conversationId: string; targetUserId: string }) => {
-      const res = await api.patch(`/conversations/${conversationId}/admin/${targetUserId}`);
+    mutationFn: async ({
+      conversationId,
+      targetUserId,
+    }: {
+      conversationId: string;
+      targetUserId: string;
+    }) => {
+      const res = await api.patch(
+        `/conversations/${conversationId}/admin/${targetUserId}`
+      );
       return res;
     },
     onSuccess: () => {
@@ -109,19 +167,24 @@ const useMakeGroupAdmin = () => {
   });
 };
 
-// --- MESSAGES ---
+// ==========================================
+// 2. MESSAGE HOOKS
+// ==========================================
+
 const useGetMessages = (conversationId: string | null) => {
-  return useInfiniteQuery({
+  return useInfiniteQuery<Message[]>({
     queryKey: ["messages", conversationId],
     enabled: !!conversationId,
     queryFn: async ({ pageParam }) => {
       const res = await api.get(`/messages/${conversationId}`, {
         params: { cursor: pageParam },
       });
-      return asArray(res);
+      return asArray<Message>(res);
     },
     getNextPageParam: (lastPage: any) =>
-      Array.isArray(lastPage) && lastPage.length ? lastPage[lastPage.length - 1].id : undefined,
+      Array.isArray(lastPage) && lastPage.length
+        ? lastPage[lastPage.length - 1].id
+        : undefined,
     initialPageParam: undefined,
   });
 };
@@ -141,9 +204,8 @@ const useSendMessage = () => {
       image?: string;
       replyToId?: string;
     }) => {
-      // 🌟 conversationId বডি এবং ইউআরএল দুটিতেই পাস করা হলো
       const response = await api.post(`/messages/${conversationId}`, {
-        conversationId, // 👈 ব্যাকএন্ডের req.body-তে পাওয়ার জন্য
+        conversationId,
         body,
         image,
         replyToId,
@@ -151,16 +213,44 @@ const useSendMessage = () => {
       return response.data;
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["messages", variables.conversationId] });
+      queryClient.invalidateQueries({
+        queryKey: ["messages", variables.conversationId],
+      });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     },
+  });
+};
+
+// 🌟 ৪২৯ লুপ ফিক্স: রিড মার্ক করলে আর invalidateQueries কল হবে না
+const useMarkMessageAsRead = () => {
+  return useMutation({
+    mutationFn: async ({
+      messageId,
+      conversationId,
+    }: {
+      messageId: string;
+      conversationId: string;
+    }) => {
+      const res = await api.patch(`/messages/${messageId}/status`, {
+        status: "READ",
+        conversationId,
+      });
+      return res;
+    },
+    // onSuccess তুলে দেওয়া হয়েছে যেন ইনফিনিট রিলক না ঘটে
   });
 };
 
 const useReactToMessage = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
+    mutationFn: async ({
+      messageId,
+      emoji,
+    }: {
+      messageId: string;
+      emoji: string;
+    }) => {
       const res = await api.post(`/messages/${messageId}/react`, { emoji });
       return res;
     },
@@ -183,16 +273,74 @@ const useDeleteMessage = () => {
   });
 };
 
-// --- USER SEARCH ---
+const useDeleteMessageForMe = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (messageId: string) => {
+      const res = await api.post(`/messages/${messageId}/delete-for-me`);
+      return res;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["messages"] });
+    },
+  });
+};
+
+// ==========================================
+// 3. USER, FRIEND REQUEST & BLOCK HOOKS
+// ==========================================
+
 const useSearchUsers = (query: string) => {
   return useQuery({
     queryKey: ["users", "search", query],
     queryFn: async () => {
       if (!query.trim()) return [];
       const res = await api.get(`/users/search?q=${query}`);
-      return asArray(res);
+      return asArray<User>(res);
     },
     enabled: query.trim().length > 0,
+  });
+};
+
+const useSendFriendRequest = () => {
+  return useMutation({
+    mutationFn: async (receiverId: string) => {
+      return await api.post("/users/friend-request/send", { receiverId });
+    },
+  });
+};
+
+const useHandleFriendRequest = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      requestId,
+      status,
+    }: {
+      requestId: string;
+      status: "ACCEPTED" | "REJECTED";
+    }) => {
+      return await api.post("/users/friend-request/handle", {
+        requestId,
+        status,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["friend-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+};
+
+const useBlockUser = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (targetUserId: string) => {
+      return await api.post("/users/block", { targetUserId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
   });
 };
 
@@ -200,12 +348,19 @@ export const useChat = {
   useSearchUsers,
   useReactToMessage,
   useSendMessage,
+  useMarkMessageAsRead,
   useGetMessages,
   useCreateGroupChat,
+  useUpdateGroupDetails,
   useAddGroupMember,
   useRemoveGroupMember,
+  useLeaveGroup,
   useMakeGroupAdmin,
   useCreateOrGetOneToOne,
   useGetConversations,
   useDeleteMessage,
+  useDeleteMessageForMe,
+  useSendFriendRequest,
+  useHandleFriendRequest,
+  useBlockUser,
 };

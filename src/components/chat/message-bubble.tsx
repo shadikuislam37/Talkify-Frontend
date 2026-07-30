@@ -3,38 +3,57 @@
 import React from "react";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, CheckCheck, CornerUpLeft, Reply, Trash2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Check, CheckCheck, CornerUpLeft, Reply, Smile, Trash2 } from "lucide-react";
 import { Message } from "@/types";
-import { formatTime } from "@/lib/utils"; // 🌟 সময় ফরম্যাট করার হেলপার ইম্পোর্ট
+import { formatTime } from "@/lib/utils";
+
+const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
 interface MessageBubbleProps {
   msg: Message;
   currentUserId?: string;
+  isGroup?: boolean;
   highlightedMsgId?: string | null;
   onReply?: (msg: Message) => void;
-  onDelete?: (msgId: string) => void;
+  onDelete?: (msgId: string) => void; 
+  onDeleteForMe?: (msgId: string) => void; 
+  onReaction?: (msgId: string, emoji: string) => void; 
   onScrollToReply?: (targetId: string) => void;
 }
 
 export function MessageBubble({
   msg,
   currentUserId,
+  isGroup = false,
   highlightedMsgId,
   onReply,
   onDelete,
+  onDeleteForMe,
+  onReaction,
   onScrollToReply,
 }: MessageBubbleProps) {
   const msgSenderId = msg.senderId || msg.sender?.id;
   const isMe = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
   const isHighlighted = highlightedMsgId === msg.id;
 
-  // 🌟 রিড লজিক: অন্য কোনো ইউজার (আমার আইডি ছাড়া) মেসেজটি রিড করেছে কি না
+  // 🌟 READ STATUS LOGIC FIX
   const isReadByOther = React.useMemo(() => {
+    // ১. নিজের পাঠানো মেসেজ না হলে ব্লু টিক হিসাব হবে না
+    if (!isMe) return false;
+
+    // ২. যদি reads অ্যারেতে অন্য কোনো ইউজারের ID পাওয়া যায়
     if (msg.reads && Array.isArray(msg.reads) && msg.reads.length > 0) {
-      return msg.reads.some((r) => String(r.userId) !== String(currentUserId));
+      const hasOtherRead = msg.reads.some((r) => {
+        const readerId = typeof r === "string" ? r : r.userId;
+        return Boolean(readerId && String(readerId) !== String(currentUserId));
+      });
+      if (hasOtherRead) return true;
     }
+
+    // ৩. মেসেজের স্ট্যাটাস 'READ' হলে
     return msg.status === "READ";
-  }, [msg.reads, msg.status, currentUserId]);
+  }, [msg.reads, msg.status, currentUserId, isMe]);
 
   return (
     <div
@@ -43,7 +62,7 @@ export function MessageBubble({
         isHighlighted ? "bg-primary/20 ring-2 ring-primary/40" : ""
       } ${isMe ? "items-end" : "items-start"}`}
     >
-      {/* "X replied to Y" Header Text */}
+      {/* "X replied to Y" Header */}
       {msg.replyTo && (
         <div
           onClick={() => {
@@ -75,12 +94,38 @@ export function MessageBubble({
           </Avatar>
         )}
 
-        {/* Hover Actions (Reply & Delete Buttons) */}
+        {/* Action Controls (Hover) */}
         <div
           className={`hidden group-hover:flex items-center gap-1 ${
             isMe ? "order-first" : "order-last"
           }`}
         >
+          {onReaction && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  title="React"
+                  className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
+                >
+                  <Smile className="h-3.5 w-3.5" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="flex gap-1 p-1 w-auto rounded-full" side="top">
+                {EMOJIS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => onReaction(msg.id, emoji)}
+                    className="hover:bg-muted p-1 rounded-full text-base transition-transform hover:scale-125"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+          )}
+
           {onReply && (
             <button
               type="button"
@@ -91,11 +136,23 @@ export function MessageBubble({
               <Reply className="h-3.5 w-3.5" />
             </button>
           )}
+
+          {onDeleteForMe && (
+            <button
+              type="button"
+              onClick={() => onDeleteForMe(msg.id)}
+              title="Delete for me"
+              className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+
           {isMe && onDelete && (
             <button
               type="button"
               onClick={() => onDelete(msg.id)}
-              title="Delete"
+              title="Delete for everyone"
               className="p-1 hover:bg-muted rounded text-red-500 transition-colors"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -103,7 +160,14 @@ export function MessageBubble({
           )}
         </div>
 
-        <div className="flex flex-col max-w-[70%]">
+        <div className="flex flex-col max-w-[70%] relative">
+          {/* Group Chat Header Name */}
+          {isGroup && !isMe && msg.sender?.name && (
+            <span className="text-[11px] font-semibold text-primary mb-0.5 ml-1">
+              {msg.sender.name}
+            </span>
+          )}
+
           {/* Parent Reply Body Preview */}
           {msg.replyTo && (
             <div
@@ -121,13 +185,12 @@ export function MessageBubble({
 
           {/* Main Message Bubble Body */}
           <div
-            className={`p-2.5 rounded-2xl border space-y-1 ${
+            className={`p-2.5 rounded-2xl border space-y-1 relative ${
               isMe
                 ? "bg-primary text-primary-foreground rounded-br-none self-end"
                 : "bg-muted/50 rounded-bl-none self-start"
             }`}
           >
-            {/* 🌟 Image Wrapper Container with relative position */}
             {msg.image && (
               <div className="relative w-full min-w-[200px] h-48 mb-1 rounded-md overflow-hidden bg-muted/20">
                 <Image
@@ -143,16 +206,13 @@ export function MessageBubble({
 
             {msg.body && <p className="text-sm font-medium break-words">{msg.body}</p>}
 
-            {/* 🌟 Time and Read/Sent Status Indicator */}
             <div
               className={`flex items-center justify-end gap-1 text-[10px] mt-0.5 ${
                 isMe ? "text-primary-foreground/80" : "text-muted-foreground"
               }`}
             >
-              {/* সময় প্রদর্শন */}
               <span>{formatTime(msg.createdAt)}</span>
 
-              {/* নিজের পাঠানো মেসেজের জন্য টিক মার্ক */}
               {isMe && (
                 <span className="ml-0.5">
                   {isReadByOther ? (
@@ -164,6 +224,19 @@ export function MessageBubble({
               )}
             </div>
           </div>
+
+          {/* Reactions Badges */}
+          {msg.reactions && msg.reactions.length > 0 && (
+            <div
+              className={`absolute -bottom-2 ${
+                isMe ? "right-2" : "left-2"
+              } bg-background border rounded-full px-1.5 py-0.5 text-xs shadow flex items-center gap-1 z-10`}
+            >
+              {msg.reactions.map((r: any) => (
+                <span key={r.id || r.emoji}>{r.emoji}</span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

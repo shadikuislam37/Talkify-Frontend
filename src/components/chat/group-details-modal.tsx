@@ -16,10 +16,9 @@ import {
   ShieldAlert,
   UserPlus,
   Loader2,
+  LogOut,
 } from "lucide-react";
 import { AuthUser } from "@/types";
-
-
 
 interface GroupDetailsModalProps {
   open: boolean;
@@ -51,6 +50,8 @@ export default function GroupDetailsModal({
     useChat.useMakeGroupAdmin();
   const { mutateAsync: addMembers, isPending: isAdding } =
     useChat.useAddGroupMember();
+  const { mutateAsync: leaveGroup, isPending: isLeaving } =
+    useChat.useLeaveGroup?.() || { mutateAsync: async () => {} };
 
   const isCurrentUserAdmin = currentUserId
     ? adminIds.includes(currentUserId)
@@ -78,6 +79,13 @@ export default function GroupDetailsModal({
     await addMembers({ conversationId, userIds: selectedNewUserIds });
     setSelectedNewUserIds([]);
     setIsAddMemberOpen(false);
+  };
+
+  const handleLeaveGroup = async () => {
+    if (confirm("Are you sure you want to leave this group?")) {
+      await leaveGroup(conversationId);
+      onOpenChange(false);
+    }
   };
 
   return (
@@ -108,7 +116,7 @@ export default function GroupDetailsModal({
               ) : (
                 <div className="border rounded-lg p-3 space-y-3 bg-muted/30">
                   <p className="text-xs font-semibold">Select members to add:</p>
-                  
+
                   {nonMembers.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-2 text-center">
                       No external users available to add.
@@ -141,8 +149,8 @@ export default function GroupDetailsModal({
                           <Avatar className="h-6 w-6">
                             <AvatarImage src={user.image || undefined} />
                             <AvatarFallback>
-  {user?.name ? user.name.slice(0, 2).toUpperCase() : "U"}
-</AvatarFallback>
+                              {user?.name ? user.name.slice(0, 2).toUpperCase() : "U"}
+                            </AvatarFallback>
                           </Avatar>
                           <span className="font-medium">{user.name}</span>
                         </label>
@@ -240,6 +248,25 @@ export default function GroupDetailsModal({
                 );
               })}
             </div>
+          </div>
+
+          {/* 🌟 Leave Group Button Section */}
+          <div className="pt-2 border-t">
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={handleLeaveGroup}
+              disabled={isLeaving}
+              className="w-full flex items-center justify-center gap-2 h-9"
+            >
+              {isLeaving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogOut className="h-4 w-4" />
+              )}
+              <span>Leave Group</span>
+            </Button>
           </div>
         </div>
       </DialogContent>

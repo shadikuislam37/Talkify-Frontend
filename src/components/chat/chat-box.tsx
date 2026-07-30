@@ -6,7 +6,7 @@ import { useForm } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocket } from "@/hooks/use-socket";
 import { useChat } from "@/hooks/use-chat";
-import { Loader2, Send, Paperclip, X, Info } from "lucide-react";
+import { Loader2, Send, Paperclip, X, Info, Video } from "lucide-react";
 import { sendMessageSchema, SendMessageInput } from "@/schemas/chat.schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,9 @@ import { Input } from "@/components/ui/input";
 import GroupDetailsModal from "./group-details-modal";
 import { AuthUser, Conversation, Message } from "@/types";
 import MessageBubble from "./message-bubble";
+import { useCallStore } from "@/store/use-call-store";
+import { useOnlineUsers } from "@/hooks/use-online-users"; // 🌟 ১. useOnlineUsers Import
+import { formatLastSeen } from "@/lib/utils";
 
 interface ChatBoxProps {
   conversationId: string;
@@ -33,14 +36,22 @@ export default function ChatBox({
   const { socket } = useSocket(conversationId);
   const queryClient = useQueryClient();
 
+  // 🌟 ২. অনলাইন ইউজারের আইডি লিস্ট রিসিভ
+  const onlineUsers = useOnlineUsers();
+
+  // Call store trigger
+  const startCall = useCallStore((state) => state.startCall);
   const [isGroupDetailsOpen, setIsGroupDetailsOpen] = useState(false);
 
-  // 🌟 ১-টু-১ চ্যাটের জন্য অপর ইউজারকে আলাদা করা (টাইপসেফ)
+  // ১-টু-১ চ্যাটের জন্য অপর ইউজার
   const otherUser = React.useMemo(() => {
     if (!conversation || conversation.isGroup) return null;
     const users = conversation.users || [];
     return users.find((u: AuthUser) => u.id !== currentUserId) || users[0];
   }, [conversation, currentUserId]);
+
+  // 🌟 ৩. অপর ইউজার অনলাইন কি না তা চেক করা
+  const isOnline = Boolean(otherUser?.id && onlineUsers.has(otherUser.id));
 
   const chatTitle = conversation?.isGroup
     ? conversation.name || "Group Chat"
@@ -59,16 +70,19 @@ export default function ChatBox({
   } = useChat.useGetMessages(conversationId);
 
   const messages: Message[] = React.useMemo(() => {
-  const rawList = data?.pages.flatMap((page: unknown) => page as Message[]) ?? [];
-  return [...rawList].reverse();
-}, [data]);
+    const rawList = data?.pages.flatMap((page: unknown) => page as Message[]) ?? [];
+    return [...rawList].reverse();
+  }, [data]);
 
   const { mutateAsync: sendMessage, isPending: isSending } = useChat.useSendMessage();
+  const { mutateAsync: markAsRead } = useChat.useMarkMessageAsRead?.() || {
+    mutateAsync: async () => {},
+  };
   const { mutateAsync: deleteMessage } = useChat.useDeleteMessage?.() || {
     mutateAsync: async () => {},
   };
 
-  const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<{ [userId: string]: string }>({});
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
@@ -92,6 +106,16 @@ export default function ChatBox({
     }
   };
 
+  const handleStartVideoCall = () => {
+    if (!otherUser) return;
+
+    startCall({
+      id: otherUser.id,
+      name: otherUser.name || "User",
+      image: otherUser.image || undefined,
+    });
+  };
+
   useEffect(() => {
     if (!socket || !conversationId) return;
     socket.emit("join_conversation", { conversationId });
@@ -100,9 +124,12 @@ export default function ChatBox({
     };
   }, [socket, conversationId]);
 
-  // 🌟 সকেট মেসেজ লিসেনার
+  // সকেট মেসেজ লিসেনার
+  // 🌟 সকেট মেসেজ ও রিড স্ট্যাটাস লিসেনার (Fixed for Real-time Blue Tick)
   useEffect(() => {
-    if (!socket) return;
+    if (!socket.connected) {
+    socket.connect();
+  }
 
     const handleNewMessage = (newMessage: Message) => {
       queryClient.setQueryData(
@@ -118,23 +145,33 @@ export default function ChatBox({
       );
     };
 
-    const handleStatusChange = (data: { messageId: string; userId: string; status: string }) => {
+    const handleStatusChange = (data: { messageId: string; userId?: string; readByUserId?: string; status: string }) => {
+      const readerUserId = data.userId || data.readByUserId;
+
       queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
         if (!oldData) return oldData;
+
         return {
           ...oldData,
           pages: oldData.pages.map((page: Message[]) =>
             page.map((msg) => {
               if (msg.id === data.messageId) {
                 const existingReads = msg.reads || [];
-                const alreadyRead = existingReads.some((r) => String(r.userId) === String(data.userId));
+                
+                // ১. ইতিমধ্যেই এই ইউজার রিড করেছে কি না চেক
+                const alreadyRead = readerUserId 
+                  ? existingReads.some((r) => String(r.userId) === String(readerUserId))
+                  : false;
+
+                // ২. নতুন রিড অবজেক্ট তৈরি
+                const updatedReads = alreadyRead || !readerUserId
+                  ? existingReads
+                  : [...existingReads, { id: Math.random().toString(), messageId: msg.id, userId: readerUserId, readAt: new Date().toISOString() }];
 
                 return {
                   ...msg,
                   status: data.status as any,
-                  reads: alreadyRead
-                    ? existingReads
-                    : [...existingReads, { userId: data.userId, readAt: new Date().toISOString() }],
+                  reads: updatedReads, // 🌟 মেসেজের reads অ্যারে আপডেট করা হলো
                 };
               }
               return msg;
@@ -155,29 +192,38 @@ export default function ChatBox({
     };
   }, [socket, conversationId, queryClient]);
 
-  // 🌟 আনরিড মেসেজ রিড করার ট্র্রিগার
-  useEffect(() => {
-    if (!socket || !conversationId || !currentUserId || messages.length === 0) return;
+  // 🌟 ৪. আনরিড মেসেজ রিড ট্র্রিগার (DB + Socket Sync)
+ useEffect(() => {
+  if (!conversationId || !currentUserId || messages.length === 0) return;
 
-    const incomingUnreadMessages = messages.filter((m) => {
-      const msgSenderId = m.senderId || m.sender?.id;
-      const isMyMessage = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
-      const alreadyReadByMe = m.reads?.some((r) => String(r.userId) === String(currentUserId));
+  const incomingUnreadMessages = messages.filter((m) => {
+    const msgSenderId = m.senderId || m.sender?.id;
+    const isMyMessage = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
+    const alreadyReadByMe = m.reads?.some((r) => String(r.userId) === String(currentUserId));
 
-      return !isMyMessage && m.status !== "READ" && !alreadyReadByMe;
-    });
+    return !isMyMessage && m.status !== "READ" && !alreadyReadByMe;
+  });
 
-    if (incomingUnreadMessages.length > 0) {
-      incomingUnreadMessages.forEach((msg) => {
+  if (incomingUnreadMessages.length > 0) {
+    incomingUnreadMessages.forEach(async (msg) => {
+      try {
+        await markAsRead({ messageId: msg.id, conversationId });
+      } catch (err) {
+        // Silent Fail
+      }
+
+      if (socket && socket.connected) {
         socket.emit("update_message_status", {
           messageId: msg.id,
           conversationId,
           userId: currentUserId,
           status: "READ",
         });
-      });
-    }
-  }, [socket, conversationId, messages, currentUserId]);
+      }
+    });
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [conversationId, currentUserId, messages.length, markAsRead, socket]);
 
   const handleObserver = useCallback(
     (entries: IntersectionObserverEntry[]) => {
@@ -198,7 +244,7 @@ export default function ChatBox({
   }, [handleObserver]);
 
   useEffect(() => {
-    if (messages.length > 0 || isOtherTyping) {
+    if (messages.length > 0 || Object.keys(typingUsers).length > 0) {
       if (isInitialMount.current) {
         messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
         isInitialMount.current = false;
@@ -206,7 +252,7 @@ export default function ChatBox({
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }
     }
-  }, [messages.length, isOtherTyping]);
+  }, [messages.length, typingUsers]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -219,14 +265,27 @@ export default function ChatBox({
     }
   };
 
+  // টাইপিং লিসেনার
   useEffect(() => {
     if (!socket) return;
 
-    const handleTypingStart = (data: { conversationId: string }) => {
-      if (data.conversationId === conversationId) setIsOtherTyping(true);
+    const handleTypingStart = (data: { conversationId: string; userId?: string; senderName?: string }) => {
+      if (data.conversationId === conversationId && data.userId !== currentUserId) {
+        setTypingUsers((prev) => ({
+          ...prev,
+          [data.userId || "unknown"]: data.senderName || "Someone",
+        }));
+      }
     };
-    const handleTypingStop = (data: { conversationId: string }) => {
-      if (data.conversationId === conversationId) setIsOtherTyping(false);
+
+    const handleTypingStop = (data: { conversationId: string; userId?: string }) => {
+      if (data.conversationId === conversationId) {
+        setTypingUsers((prev) => {
+          const updated = { ...prev };
+          delete updated[data.userId || "unknown"];
+          return updated;
+        });
+      }
     };
 
     socket.on("on_typing_start", handleTypingStart);
@@ -236,9 +295,9 @@ export default function ChatBox({
       socket.off("on_typing_start", handleTypingStart);
       socket.off("on_typing_stop", handleTypingStop);
     };
-  }, [socket, conversationId]);
+  }, [socket, conversationId, currentUserId]);
 
-  // 🌟 TanStack Form হ্যান্ডলিং
+  // TanStack Form
   const form = useForm({
     defaultValues: {
       body: "",
@@ -251,7 +310,7 @@ export default function ChatBox({
 
       if (!activeId || (!value.body?.trim() && !selectedImage)) return;
 
-      if (socket) socket.emit("typing_stop", { conversationId: activeId });
+      if (socket) socket.emit("typing_stop", { conversationId: activeId, userId: currentUserId });
 
       const payload = {
         conversationId: activeId,
@@ -285,13 +344,13 @@ export default function ChatBox({
   const handleInputChange = (text: string) => {
     if (!socket) return;
     if (text.trim().length > 0) {
-      socket.emit("typing_start", { conversationId, senderName: currentUserName });
+      socket.emit("typing_start", { conversationId, userId: currentUserId, senderName: currentUserName });
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => {
-        socket.emit("typing_stop", { conversationId });
+        socket.emit("typing_stop", { conversationId, userId: currentUserId });
       }, 2000);
     } else {
-      socket.emit("typing_stop", { conversationId });
+      socket.emit("typing_stop", { conversationId, userId: currentUserId });
     }
   };
 
@@ -319,6 +378,8 @@ export default function ChatBox({
     }
   };
 
+  const typingUserNames = Object.values(typingUsers);
+
   return (
     <div className="flex flex-col h-full border rounded-md p-4 bg-background relative">
       {/* CHAT HEADER SECTION */}
@@ -331,12 +392,19 @@ export default function ChatBox({
           }}
           className={`flex items-center gap-3 ${conversation?.isGroup ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
         >
-          <Avatar className="h-9 w-9">
-            <AvatarImage src={chatAvatarImage || undefined} />
-            <AvatarFallback className="text-xs font-semibold">
-              {chatTitle ? chatTitle.slice(0, 2).toUpperCase() : "CU"}
-            </AvatarFallback>
-          </Avatar>
+          <div className="relative">
+            <Avatar className="h-9 w-9">
+              <AvatarImage src={chatAvatarImage || undefined} />
+              <AvatarFallback className="text-xs font-semibold">
+                {chatTitle ? chatTitle.slice(0, 2).toUpperCase() : "CU"}
+              </AvatarFallback>
+            </Avatar>
+            {/* 🌟 ৫. অনলাইন হলে গ্রিন ডট ব্যাজ দেখানো */}
+            {!conversation?.isGroup && isOnline && (
+              <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />
+            )}
+          </div>
+
           <div>
             <h2 className="font-semibold text-sm leading-tight">{chatTitle}</h2>
             {conversation?.isGroup ? (
@@ -344,25 +412,44 @@ export default function ChatBox({
                 {conversation?.users?.length || 0} members • Click for info
               </p>
             ) : (
-              <p className="text-[11px] text-muted-foreground">
-                {otherUser?.email || "Direct Message"}
-              </p>
+              // 🌟 ৬. হেডার টেক্সটে অনলাইন স্ট্যাটাস দেখানো
+              <p className={`text-[11px] ${isOnline ? "text-green-600 font-medium" : "text-muted-foreground"}`}>
+      {isOnline 
+        ? "Online" 
+        : formatLastSeen(otherUser?.lastSeen)}
+    </p>
             )}
           </div>
         </div>
 
-        {conversation?.isGroup && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsGroupDetailsOpen(true)}
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            title="Group Info"
-          >
-            <Info className="h-4 w-4" />
-          </Button>
-        )}
+        {/* Action Buttons */}
+        <div className="flex items-center gap-1">
+          {!conversation?.isGroup && otherUser && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={handleStartVideoCall}
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              title="Start Video Call"
+            >
+              <Video className="h-4 w-4" />
+            </Button>
+          )}
+
+          {conversation?.isGroup && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsGroupDetailsOpen(true)}
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              title="Group Info"
+            >
+              <Info className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* MESSAGES LIST AREA */}
@@ -391,6 +478,7 @@ export default function ChatBox({
                 key={msg.id}
                 msg={msg}
                 currentUserId={currentUserId}
+                isGroup={Boolean(conversation?.isGroup)}
                 highlightedMsgId={highlightedMsgId}
                 onReply={(m) => setReplyingTo(m)}
                 onDelete={(id) => setDeletingMessageId(id)}
@@ -400,9 +488,13 @@ export default function ChatBox({
           </div>
         )}
 
-        {isOtherTyping && (
+        {typingUserNames.length > 0 && (
           <div className="text-xs text-muted-foreground italic flex items-center gap-1 animate-pulse py-1 self-start mt-2">
-            <span>Typing...</span>
+            <span>
+              {typingUserNames.length === 1
+                ? `${typingUserNames[0]} is typing...`
+                : `${typingUserNames.join(", ")} are typing...`}
+            </span>
           </div>
         )}
 
@@ -430,7 +522,7 @@ export default function ChatBox({
         </div>
       )}
 
-      {/* Selected Image Preview with Next.js Image */}
+      {/* Selected Image Preview */}
       {selectedImage && (
         <div className="relative w-16 h-16 mb-2 border rounded-md overflow-hidden bg-muted">
           <Image
@@ -490,7 +582,7 @@ export default function ChatBox({
         </Button>
       </form>
 
-      {/* Delete Confirmation Modal using Shadcn styling */}
+      {/* Delete Confirmation Modal */}
       {deletingMessageId && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-background border rounded-lg p-6 max-w-sm w-full shadow-lg space-y-4 animate-in fade-in zoom-in duration-150">

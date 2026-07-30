@@ -11,18 +11,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Loader2, Users, Search } from "lucide-react";
+import { Loader2, Users, Search, X } from "lucide-react";
 import { useChat } from "@/hooks/use-chat";
 import { AuthUser } from "@/types";
 import { CreateGroupInput } from "@/schemas/chat.schema";
 
-
 interface CreateGroupModalProps {
   userList?: AuthUser[];
+  currentUserId?: string; // 🌟 কারেন্ট ইউজারকে লিস্ট থেকে বাদ দেওয়ার জন্য অপশনাল
 }
 
 export default function CreateGroupModal({
   userList = [],
+  currentUserId,
 }: CreateGroupModalProps) {
   const [open, setOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
@@ -51,22 +52,23 @@ export default function CreateGroupModal({
     );
   };
 
-  const filteredUsers = userList.filter((user) =>
+  // কারেন্ট ইউজার ফিল্টার করে লিস্ট তৈরি
+  const availableUsers = React.useMemo(() => {
+    return userList.filter((u) => u.id !== currentUserId);
+  }, [userList, currentUserId]);
+
+  const filteredUsers = availableUsers.filter((user) =>
     user.name?.toLowerCase().includes(searchFilter.toLowerCase())
   );
 
-  // 🌟 সাবমিট ফাংশন ও লগার
+  const selectedUsers = availableUsers.filter((u) =>
+    selectedUserIds.includes(u.id)
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    console.log("Submit Triggered!");
-    console.log("Group Name:", groupName);
-    console.log("Selected IDs:", selectedUserIds);
 
-    if (!groupName.trim()) {
-      alert("Please enter a group name");
-      return;
-    }
+    if (!groupName.trim()) return;
 
     if (selectedUserIds.length < 2) {
       alert("Please select at least 2 members");
@@ -74,12 +76,9 @@ export default function CreateGroupModal({
     }
 
     try {
-      // 🌟 ব্যাকএন্ড অনুযায়ী নাম ও ইউজার আইডি পাঠানো
       await createGroup({
         name: groupName.trim(),
         userIds: selectedUserIds,
-        // যদি ব্যাকএন্ডে 'members' ফিল্ড চায়, তবে নিচের লাইনটি আনকমেন্ট করতে পারেন:
-        // members: selectedUserIds, 
       } as CreateGroupInput);
 
       resetForm();
@@ -89,8 +88,8 @@ export default function CreateGroupModal({
     }
   };
 
-  // বাটন ডিসেবল লজিক চেক
-  const isButtonDisabled = isPending || !groupName.trim() || selectedUserIds.length < 2;
+  const isButtonDisabled =
+    isPending || !groupName.trim() || selectedUserIds.length < 2;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -134,7 +133,29 @@ export default function CreateGroupModal({
               </span>
             </div>
 
-            {userList.length > 5 && (
+            {/* 🌟 Selected Members Badges */}
+            {selectedUsers.length > 0 && (
+              <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto p-1 bg-muted/40 rounded-md border">
+                {selectedUsers.map((user) => (
+                  <span
+                    key={user.id}
+                    className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full border border-primary/20"
+                  >
+                    <span className="truncate max-w-[100px]">{user.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => toggleUserSelection(user.id)}
+                      className="hover:text-destructive transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* User Search Input */}
+            {availableUsers.length > 5 && (
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
@@ -150,13 +171,13 @@ export default function CreateGroupModal({
             <div className="max-h-48 overflow-y-auto border rounded-md p-1 space-y-1">
               {filteredUsers.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-6">
-                  {userList.length === 0
+                  {availableUsers.length === 0
                     ? "No users available"
                     : "No matching user found"}
                 </p>
               ) : (
                 filteredUsers.map((user) => {
-                  const uId = (user.id) as string;
+                  const uId = user.id;
                   const isSelected = selectedUserIds.includes(uId);
 
                   return (
@@ -181,7 +202,7 @@ export default function CreateGroupModal({
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        onChange={() => toggleUserSelection(uId)}
+                        readOnly
                         className="rounded accent-primary h-4 w-4 cursor-pointer"
                       />
                     </div>
@@ -200,10 +221,7 @@ export default function CreateGroupModal({
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={isButtonDisabled}
-            >
+            <Button type="submit" disabled={isButtonDisabled}>
               {isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
               Create Group
             </Button>

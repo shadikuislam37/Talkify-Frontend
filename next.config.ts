@@ -4,6 +4,14 @@ const BACKEND_URL =
 
 const nextConfig = {
   reactStrictMode: true,
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+      },
+    ],
+  },
   async rewrites() {
     // Proxy all API calls through the Next.js server so requests are
     // same-origin. This makes the Better Auth session cookie first-party,
@@ -13,7 +21,6 @@ const nextConfig = {
       {
         source: "/backend-api/:path*",
         destination: `${BACKEND_URL}/:path*`,
-        
       },
     ];
   },
