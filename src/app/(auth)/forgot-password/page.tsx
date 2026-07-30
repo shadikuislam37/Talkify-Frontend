@@ -9,7 +9,8 @@ import { emailOTP, authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, KeyRound, ArrowLeft } from "lucide-react";
+import { Loader2, KeyRound, ArrowLeft, RefreshCw } from "lucide-react";
+import { toast } from "sonner"; // 🌟 Shadcn Sonner Toast ইম্পোর্ট করা হলো
 
 const FieldError = ({ errors }: { errors: unknown[] }) => {
   if (!errors || errors.length === 0) return null;
@@ -34,6 +35,7 @@ export default function ForgotPasswordPage() {
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [verifying, setVerifying] = useState(false);
+  const [resendingOtp, setResendingOtp] = useState(false);
 
   // Step 1: Send Reset OTP Form
   const form = useForm({
@@ -52,28 +54,62 @@ export default function ForgotPasswordPage() {
         });
 
         if (error) {
-          setErrorMsg(error.message || "Failed to send OTP code.");
+          const msg = error.message || "Failed to send OTP code.";
+          setErrorMsg(msg);
+          toast.error(msg);
           return;
         }
 
         setUserEmail(value.email);
         setStep("OTP");
+        toast.success("Reset OTP code sent to your email! 📩");
       } catch (err) {
         console.error("Forgot password error:", err);
-        setErrorMsg("Something went wrong. Please try again.");
+        const msg = "Something went wrong. Please try again.";
+        setErrorMsg(msg);
+        toast.error(msg);
       }
     },
   });
+
+  // Resend OTP Handler
+  const handleResendOTP = async () => {
+    setResendingOtp(true);
+    setErrorMsg("");
+    try {
+      const { error } = await emailOTP.sendVerificationOtp({
+        email: userEmail,
+        type: "forget-password",
+      });
+
+      if (error) {
+        const msg = error.message || "Failed to resend OTP.";
+        setErrorMsg(msg);
+        toast.error(msg);
+      } else {
+        toast.success("A new OTP code has been sent to your email!");
+      }
+    } catch (err) {
+      console.error("Resend OTP error:", err);
+      toast.error("Failed to resend OTP.");
+    } finally {
+      setResendingOtp(false);
+    }
+  };
 
   // Step 2: Reset Password Handler
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!otp || otp.length < 6) {
-      setErrorMsg("Please enter a valid 6-digit OTP");
+      const msg = "Please enter a valid 6-digit OTP";
+      setErrorMsg(msg);
+      toast.error(msg);
       return;
     }
     if (!newPassword || newPassword.length < 6) {
-      setErrorMsg("Password must be at least 6 characters long.");
+      const msg = "Password must be at least 6 characters long.";
+      setErrorMsg(msg);
+      toast.error(msg);
       return;
     }
 
@@ -88,13 +124,18 @@ export default function ForgotPasswordPage() {
       });
 
       if (error) {
-        setErrorMsg(error.message || "Invalid OTP code or reset failed!");
+        const msg = error.message || "Invalid OTP code or reset failed!";
+        setErrorMsg(msg);
+        toast.error(msg);
       } else {
+        toast.success("Password reset successfully! Please sign in with your new password. 🎉");
         router.push("/sign-in?reset=success");
       }
     } catch (err) {
       console.error("Reset password OTP error:", err);
-      setErrorMsg("Something went wrong. Please try again.");
+      const msg = "Something went wrong. Please try again.";
+      setErrorMsg(msg);
+      toast.error(msg);
     } finally {
       setVerifying(false);
     }
@@ -153,17 +194,34 @@ export default function ForgotPasswordPage() {
             {verifying ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Set New Password"}
           </Button>
 
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full h-10"
-            onClick={() => {
-              setStep("EMAIL");
-              setErrorMsg("");
-            }}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" /> Change Email
-          </Button>
+          <div className="flex items-center justify-between pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setStep("EMAIL");
+                setErrorMsg("");
+              }}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" /> Change Email
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleResendOTP}
+              disabled={resendingOtp}
+            >
+              {resendingOtp ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Resend OTP
+            </Button>
+          </div>
         </form>
       </div>
     );

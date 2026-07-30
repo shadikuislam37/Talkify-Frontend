@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosRequestConfig } from "axios";
+import { toast } from "sonner"; // 🌟 ১. Toast ইম্পোর্ট করুন
 
 // প্রক্সি পাথ ব্যবহার করছি
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/backend-api";
@@ -25,15 +26,30 @@ const axiosInstance = axios.create({
 // Response Interceptor
 axiosInstance.interceptors.response.use(
   (response) => {
+    // 🌟 ২. যেকোনো Successful Mutation (POST, PUT, PATCH, DELETE)-এ যদি ব্যাকএন্ড থেকে message আসে, তবে অটো Toast দেখাবে
+    const method = response.config.method?.toLowerCase();
+    const data = response.data as any;
+
+    if (method && method !== "get") {
+      const successMessage = data?.message || data?.data?.message;
+      if (successMessage && typeof successMessage === "string") {
+        toast.success(successMessage);
+      }
+    }
+
     return response.data; // ইন্টারসেপ্টর সরাসরি ডাটা রিটার্ন করবে
   },
   (error: AxiosError) => {
+    let message = "Network error. Please check your connection and try again.";
+    let status = 0;
+
     if (error.response) {
+      status = error.response.status;
       const data = error.response.data as
         | { error?: string; message?: string; errorMessage?: string }
         | string;
 
-      const message =
+      message =
         (data &&
           typeof data === "object" &&
           ((typeof data.error === "string" && data.error) ||
@@ -41,14 +57,15 @@ axiosInstance.interceptors.response.use(
             data.errorMessage)) ||
         (typeof data === "string" && data.slice(0, 200)) ||
         `Request failed with status ${error.response.status}`;
-
-      throw new ApiError(String(message), error.response.status);
     }
 
-    throw new ApiError(
-      "Network error. Please check your connection and try again.",
-      0
-    );
+    // 🌟 ৩. গ্লোবালি এরর দেখালেই স্বয়ংক্রিয়ভাবে Red Toast পপ-আপ হবে!
+    // (নোট: 401 Unauthenticated এররের ক্ষেত্রে অনেক সময় টোস্ট না দেখিয়ে সাইন-ইনে রিডাইরেক্ট করানো ভালো)
+    if (status !== 401) {
+      toast.error(String(message));
+    }
+
+    throw new ApiError(String(message), status);
   }
 );
 
@@ -93,11 +110,10 @@ export function unwrap<T>(payload: unknown): T {
 export function asArray<T>(payload: unknown): T[] {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload as T[];
-  
+
   if (typeof payload === "object") {
     const obj = payload as Record<string, unknown>;
-    
-    // ব্যাকএন্ড যদি data, conversations, result ইত্যাদির ভেতরে অ্যারে পাঠায়
+
     const possibleKeys = ["data", "conversations", "result", "results", "items"];
     for (const key of possibleKeys) {
       if (Array.isArray(obj[key])) {

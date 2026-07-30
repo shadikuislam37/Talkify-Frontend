@@ -9,7 +9,7 @@ import { signIn, authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldCheck, ArrowLeft } from "lucide-react";
+import { Loader2, ShieldCheck, ArrowLeft, RefreshCw } from "lucide-react";
 import { useAuthStore } from "@/store/use-auth-store";
 
 // 🌟 Reusable Field Error Component
@@ -33,6 +33,7 @@ export default function SignInPage() {
   const [userEmail, setUserEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [resendingOtp, setResendingOtp] = useState(false);
 
   const setUser = useAuthStore((state) => state.setUser);
 
@@ -61,6 +62,13 @@ export default function SignInPage() {
         // 🌟 যদি ব্যাকএন্ড থেকে ২FA/OTP ট্রিগার করা হয়ে থাকে
         if ((data as unknown as { twoFactorRedirect?: boolean })?.twoFactorRedirect) {
           setUserEmail(value.email);
+          
+          // 🚀 এখানে ব্যাকএন্ডকে OTP ইমেইল সেন্ড করতে বলুন!
+          const { error: otpErr } = await authClient.twoFactor.sendOtp();
+          if (otpErr) {
+            setErrorMsg(otpErr.message || "Failed to send OTP code to email.");
+          }
+
           setStep("OTP");
           return;
         }
@@ -111,6 +119,25 @@ export default function SignInPage() {
     }
   };
 
+  // 🌟 Resend OTP Function
+  const handleResendOTP = async () => {
+    setResendingOtp(true);
+    setErrorMsg("");
+    try {
+      const { error } = await authClient.twoFactor.sendOtp();
+      if (error) {
+        setErrorMsg(error.message || "Failed to resend OTP.");
+      } else {
+        alert("A new OTP code has been sent to your email!");
+      }
+    } catch (err) {
+      console.error("Resend OTP Error:", err);
+      setErrorMsg("Failed to resend OTP.");
+    } finally {
+      setResendingOtp(false);
+    }
+  };
+
   // 🌟 Step 2 Screen: Login OTP Input
   if (step === "OTP") {
     return (
@@ -151,17 +178,34 @@ export default function SignInPage() {
             {verifyingOtp ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Verify & Log In"}
           </Button>
 
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full h-10"
-            onClick={() => {
-              setStep("CREDENTIALS");
-              setErrorMsg("");
-            }}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Sign In
-          </Button>
+          <div className="flex items-center justify-between pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setStep("CREDENTIALS");
+                setErrorMsg("");
+              }}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleResendOTP}
+              disabled={resendingOtp}
+            >
+              {resendingOtp ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Resend OTP
+            </Button>
+          </div>
         </form>
       </div>
     );
