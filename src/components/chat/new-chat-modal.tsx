@@ -12,7 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
-import { UserSearch, UserProfile } from "./user-search"; // 🌟 UserSearch কম্পোনেন্ট ইম্পোর্ট
+import { UserProfile } from "@/types";
+import { UserSearch } from "./user-search";
 
 interface NewChatModalProps {
   onSelectConversation?: (conversationId: string) => void;

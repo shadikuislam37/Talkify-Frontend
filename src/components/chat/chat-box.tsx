@@ -59,9 +59,9 @@ export default function ChatBox({
   } = useChat.useGetMessages(conversationId);
 
   const messages: Message[] = React.useMemo(() => {
-    const rawList = data?.pages.flatMap((page) => page) ?? [];
-    return [...rawList].reverse();
-  }, [data]);
+  const rawList = data?.pages.flatMap((page: unknown) => page as Message[]) ?? [];
+  return [...rawList].reverse();
+}, [data]);
 
   const { mutateAsync: sendMessage, isPending: isSending } = useChat.useSendMessage();
   const { mutateAsync: deleteMessage } = useChat.useDeleteMessage?.() || {

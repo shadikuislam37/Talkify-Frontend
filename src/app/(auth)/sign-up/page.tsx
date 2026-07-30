@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useForm } from "@tanstack/react-form";
 import { signUpSchema, SignUpInput } from "@/schemas/auth.schema";
-import { signUp } from "@/lib/auth-client";
+import { signUp, emailOTP } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, MailCheck } from "lucide-react";
+import { Loader2, KeyRound, ArrowLeft } from "lucide-react";
 
 // 🌟 এরর মেসেজ দেখানোর জন্য ছোট রি-ইউজেবল কম্পোনেন্ট
 const FieldError = ({ errors }: { errors: unknown[] }) => {
@@ -25,10 +26,17 @@ const FieldError = ({ errors }: { errors: unknown[] }) => {
 };
 
 export default function SignUpPage() {
+  const [step, setStep] = useState<"FORM" | "OTP">("FORM");
   const [errorMsg, setErrorMsg] = useState("");
-  const [isSuccess, setIsSuccess] = useState(false);
   const [userEmail, setUserEmail] = useState("");
+  
+  // 🌟 OTP স্ক্রিনের জন্য স্টেট
+  const [otp, setOtp] = useState("");
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
 
+  const router = useRouter();
+
+  // 🌟 Step 1: SignUp Form (TanStack Form)
   const form = useForm({
     defaultValues: {
       name: "",
@@ -37,7 +45,7 @@ export default function SignUpPage() {
       password: "",
     } as SignUpInput,
     validators: {
-      onChange: signUpSchema, // 🌟 ক্লায়েন্ট সাইড রিয়েল-টাইম ভ্যালিডেশন
+      onChange: signUpSchema,
     },
     onSubmit: async ({ value }) => {
       setErrorMsg("");
@@ -46,10 +54,10 @@ export default function SignUpPage() {
           email: value.email,
           password: value.password,
           name: value.name,
-          // 🌟 ফোন নম্বর থাকলে ও ট্রিম করলে ভ্যালু থাকলেই কেবল পাঠানো হবে
-          phone: value.phone.trim(), // 🌟 সবসময় পাঠানো হচ্ছে
+          phone: value.phone.trim(),
         };
 
+        // ১. একাউন্ট ক্রিয়েট করা
         const { error } = await signUp.email(payload);
 
         if (error) {
@@ -57,8 +65,14 @@ export default function SignUpPage() {
           return;
         }
 
+        // ২. ইমেইলে OTP পাঠানো
+        await emailOTP.sendVerificationOtp({
+          email: value.email,
+          type: "email-verification",
+        });
+
         setUserEmail(value.email);
-        setIsSuccess(true);
+        setStep("OTP"); // 🌟 OTP স্ক্রিনে ট্রান্সফার
       } catch (err) {
         console.error("Sign up error:", err);
         setErrorMsg("Something went wrong. Please try again.");
@@ -66,30 +80,93 @@ export default function SignUpPage() {
     },
   });
 
-  // 🌟 ইমেইল ভেরিফিকেশন নোটিশ স্ক্রিন
-  if (isSuccess) {
+  // 🌟 Step 2: Verify OTP Submit Handler
+  const handleVerifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp || otp.length < 6) {
+      setErrorMsg("Please enter a valid 6-digit OTP");
+      return;
+    }
+
+    setVerifyingOtp(true);
+    setErrorMsg("");
+
+    try {
+      const { error } = await emailOTP.verifyEmail({
+        email: userEmail,
+        otp: otp,
+      });
+
+      if (error) {
+        setErrorMsg(error.message || "Invalid OTP code!");
+      } else {
+        router.push("/sign-in?verified=true");
+      }
+    } catch (err) {
+      console.error("OTP Verification error:", err);
+      setErrorMsg("Verification failed. Please try again.");
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
+  // 🌟 Step 2: OTP Verification UI Screen
+  if (step === "OTP") {
     return (
-      <div className="space-y-6 text-center py-6">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <MailCheck className="h-8 w-8" />
-        </div>
-        <div className="space-y-2">
-          <h1 className="text-2xl font-bold tracking-tight">Verify your email</h1>
+      <div className="space-y-6">
+        <div className="text-center space-y-2">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <KeyRound className="h-7 w-7" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight">Verify Your Email</h1>
           <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-            We sent a verification link to{" "}
-            <span className="font-semibold text-foreground">{userEmail}</span>. 
-            Please check your inbox and click the link to activate your account.
+            We sent a 6-digit OTP code to{" "}
+            <span className="font-semibold text-foreground">{userEmail}</span>.
           </p>
         </div>
-        <div className="pt-4">
-          <Link href="/sign-in">
-            <Button className="w-full h-11">Go to Sign In</Button>
-          </Link>
-        </div>
+
+        <form onSubmit={handleVerifyOTP} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="otp">Enter 6-Digit OTP Code</Label>
+            <Input
+              id="otp"
+              type="text"
+              placeholder="123456"
+              maxLength={6}
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              className="h-11 text-center text-lg tracking-[8px] font-mono"
+              required
+            />
+          </div>
+
+          {errorMsg && (
+            <div className="rounded-md bg-destructive/10 p-3 text-sm font-medium text-destructive">
+              {errorMsg}
+            </div>
+          )}
+
+          <Button type="submit" className="w-full h-11 text-base" disabled={verifyingOtp}>
+            {verifyingOtp ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Verify & Complete Registration"}
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full h-10"
+            onClick={() => {
+              setStep("FORM");
+              setErrorMsg("");
+            }}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Edit Details
+          </Button>
+        </form>
       </div>
     );
   }
 
+  // 🌟 Step 1: Sign Up Form UI
   return (
     <div className="space-y-8">
       <div className="flex flex-col space-y-2 text-center lg:text-left">
@@ -190,7 +267,7 @@ export default function SignUpPage() {
         <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
           {([, isSubmitting]) => (
             <Button type="submit" className="h-11 w-full text-base" disabled={isSubmitting}>
-              {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Create Account"}
+              {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Create Account & Get OTP"}
             </Button>
           )}
         </form.Subscribe>

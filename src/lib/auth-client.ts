@@ -1,6 +1,6 @@
 import { createAuthClient } from "better-auth/react";
 import { API_URL } from "./api";
-
+import { emailOTPClient, twoFactorClient } from "better-auth/client/plugins";
 /**
  * Better Auth client. The backend mounts Better Auth at `/api/auth`.
  *
@@ -20,17 +20,21 @@ function resolveAuthBaseURL(): string {
 
 export const authClient = createAuthClient({
   baseURL: resolveAuthBaseURL(),
+  plugins: [emailOTPClient(), twoFactorClient()],
   fetchOptions: {
     credentials: "include",
   },
-  
 });
 
+export const {
+  signIn,
+  signUp,
 
-export const  { 
-    signIn, 
-    signUp, 
-    verifyEmail,
-    signOut, 
-    useSession,
+  resetPassword,
+  verifyEmail,
+  signOut,
+  useSession,
 } = authClient;
+
+export const emailOTP = authClient.emailOtp;
+export const twoFactor = authClient.twoFactor; // 👈 2FA হেলপার এক্সপোর্ট

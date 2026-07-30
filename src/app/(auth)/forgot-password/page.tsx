@@ -4,15 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "@tanstack/react-form";
-import { signInSchema, SignInInput } from "@/schemas/auth.schema";
-import { signIn, authClient } from "@/lib/auth-client";
+import { forgotPasswordSchema } from "@/schemas/auth.schema";
+import { emailOTP, authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldCheck, ArrowLeft } from "lucide-react";
-import { useAuthStore } from "@/store/use-auth-store";
+import { Loader2, KeyRound, ArrowLeft } from "lucide-react";
 
-// 🌟 Reusable Field Error Component
 const FieldError = ({ errors }: { errors: unknown[] }) => {
   if (!errors || errors.length === 0) return null;
   const message = errors
@@ -26,107 +24,98 @@ const FieldError = ({ errors }: { errors: unknown[] }) => {
   return <p className="text-sm font-medium text-destructive mt-1">{message}</p>;
 };
 
-export default function SignInPage() {
+export default function ForgotPasswordPage() {
   const router = useRouter();
-  const [step, setStep] = useState<"CREDENTIALS" | "OTP">("CREDENTIALS");
+  const [step, setStep] = useState<"EMAIL" | "OTP">("EMAIL");
   const [errorMsg, setErrorMsg] = useState("");
   const [userEmail, setUserEmail] = useState("");
+
+  // Step 2 States
   const [otp, setOtp] = useState("");
-  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [verifying, setVerifying] = useState(false);
 
-  const setUser = useAuthStore((state) => state.setUser);
-
-  // 🌟 Step 1: Sign-In Form (TanStack Form)
+  // Step 1: Send Reset OTP Form
   const form = useForm({
     defaultValues: {
       email: "",
-      password: "",
-    } as SignInInput,
+    },
     validators: {
-      onChange: signInSchema,
+      onChange: forgotPasswordSchema,
     },
     onSubmit: async ({ value }) => {
       setErrorMsg("");
       try {
-        const { data, error } = await signIn.email({
+        const { error } = await emailOTP.sendVerificationOtp({
           email: value.email,
-          password: value.password,
+          type: "forget-password",
         });
 
         if (error) {
-          setErrorMsg(error.message || "Invalid email or password!");
+          setErrorMsg(error.message || "Failed to send OTP code.");
           return;
         }
 
-        // 🌟 যদি ব্যাকএন্ড থেকে ২FA/OTP ট্রিগার করা হয়ে থাকে
-        if ((data as unknown as { twoFactorRedirect?: boolean })?.twoFactorRedirect) {
-          setUserEmail(value.email);
-          setStep("OTP");
-          return;
-        }
-
-        if (data?.user) {
-          setUser(data.user as unknown as Parameters<typeof setUser>[0]);
-        }
-
-        router.push("/chat");
-        router.refresh();
+        setUserEmail(value.email);
+        setStep("OTP");
       } catch (err) {
-        console.error("Sign in error:", err);
+        console.error("Forgot password error:", err);
         setErrorMsg("Something went wrong. Please try again.");
       }
     },
   });
 
-  // 🌟 Step 2: Login OTP Verification Handler
-  const handleVerifyOTP = async (e: React.FormEvent) => {
+  // Step 2: Reset Password Handler
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!otp || otp.length < 6) {
-      setErrorMsg("Please enter a valid 6-digit OTP code");
+      setErrorMsg("Please enter a valid 6-digit OTP");
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      setErrorMsg("Password must be at least 6 characters long.");
       return;
     }
 
-    setVerifyingOtp(true);
+    setVerifying(true);
     setErrorMsg("");
 
     try {
-      const { data, error } = await authClient.twoFactor.verifyOtp({
-        code: otp,
+      const { error } = await authClient.emailOtp.resetPassword({
+        email: userEmail,
+        otp: otp,
+        password: newPassword,
       });
 
       if (error) {
-        setErrorMsg(error.message || "Invalid or expired OTP code!");
+        setErrorMsg(error.message || "Invalid OTP code or reset failed!");
       } else {
-        if (data?.user) {
-          setUser(data.user as unknown as Parameters<typeof setUser>[0]);
-        }
-        router.push("/chat");
-        router.refresh();
+        router.push("/sign-in?reset=success");
       }
     } catch (err) {
-      console.error("OTP verification error:", err);
-      setErrorMsg("Verification failed. Please try again.");
+      console.error("Reset password OTP error:", err);
+      setErrorMsg("Something went wrong. Please try again.");
     } finally {
-      setVerifyingOtp(false);
+      setVerifying(false);
     }
   };
 
-  // 🌟 Step 2 Screen: Login OTP Input
+  // Step 2 UI: OTP & New Password Entry
   if (step === "OTP") {
     return (
       <div className="space-y-6">
         <div className="text-center space-y-2">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <ShieldCheck className="h-7 w-7" />
+            <KeyRound className="h-7 w-7" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">Security OTP Verification</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Reset Your Password</h1>
           <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-            We sent a 6-digit login verification code to{" "}
+            We sent a 6-digit reset OTP to{" "}
             <span className="font-semibold text-foreground">{userEmail}</span>.
           </p>
         </div>
 
-        <form onSubmit={handleVerifyOTP} className="space-y-4">
+        <form onSubmit={handleResetPassword} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="otp">6-Digit OTP Code</Label>
             <Input
@@ -141,14 +130,27 @@ export default function SignInPage() {
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="newPassword">New Password</Label>
+            <Input
+              id="newPassword"
+              type="password"
+              placeholder="••••••••"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="h-11"
+              required
+            />
+          </div>
+
           {errorMsg && (
             <div className="rounded-md bg-destructive/10 p-3 text-sm font-medium text-destructive">
               {errorMsg}
             </div>
           )}
 
-          <Button type="submit" className="w-full h-11 text-base" disabled={verifyingOtp}>
-            {verifyingOtp ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Verify & Log In"}
+          <Button type="submit" className="w-full h-11 text-base" disabled={verifying}>
+            {verifying ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Set New Password"}
           </Button>
 
           <Button
@@ -156,24 +158,24 @@ export default function SignInPage() {
             variant="ghost"
             className="w-full h-10"
             onClick={() => {
-              setStep("CREDENTIALS");
+              setStep("EMAIL");
               setErrorMsg("");
             }}
           >
-            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Sign In
+            <ArrowLeft className="mr-2 h-4 w-4" /> Change Email
           </Button>
         </form>
       </div>
     );
   }
 
-  // 🌟 Step 1 Screen: Sign In Credentials Form
+  // Step 1 UI: Request OTP Email Form
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col space-y-2 text-center lg:text-left">
-        <h1 className="text-3xl font-bold tracking-tight">Sign in</h1>
+    <div className="space-y-6">
+      <div className="space-y-2 text-center lg:text-left">
+        <h1 className="text-3xl font-bold tracking-tight">Forgot password?</h1>
         <p className="text-muted-foreground">
-          Enter your email and password to access your account
+          Enter your email address to receive a 6-digit OTP code
         </p>
       </div>
 
@@ -185,7 +187,6 @@ export default function SignInPage() {
         }}
         className="space-y-4"
       >
-        {/* Email Address */}
         <form.Field name="email">
           {(field) => (
             <div className="space-y-2">
@@ -194,33 +195,6 @@ export default function SignInPage() {
                 id={field.name}
                 type="email"
                 placeholder="name@example.com"
-                value={field.state.value || ""}
-                onBlur={field.handleBlur}
-                onChange={(e) => field.handleChange(e.target.value)}
-                className="h-11"
-              />
-              <FieldError errors={field.state.meta.errors} />
-            </div>
-          )}
-        </form.Field>
-
-        {/* Password */}
-        <form.Field name="password">
-          {(field) => (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor={field.name}>Password</Label>
-                <Link
-                  href="/forgot-password"
-                  className="text-xs font-medium text-primary hover:underline"
-                >
-                  Forgot password?
-                </Link>
-              </div>
-              <Input
-                id={field.name}
-                type="password"
-                placeholder="••••••••"
                 value={field.state.value || ""}
                 onBlur={field.handleBlur}
                 onChange={(e) => field.handleChange(e.target.value)}
@@ -243,19 +217,21 @@ export default function SignInPage() {
               {isSubmitting ? (
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               ) : (
-                "Sign In"
+                "Send Reset OTP"
               )}
             </Button>
           )}
         </form.Subscribe>
       </form>
 
-      <p className="text-center text-sm text-muted-foreground">
-        Don&apos;t have an account?{" "}
-        <Link href="/sign-up" className="font-semibold text-primary hover:underline">
-          Sign up
+      <div className="text-center">
+        <Link
+          href="/sign-in"
+          className="text-sm font-medium text-primary hover:underline inline-flex items-center"
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Sign In
         </Link>
-      </p>
+      </div>
     </div>
   );
 }
