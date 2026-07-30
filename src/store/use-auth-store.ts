@@ -1,28 +1,33 @@
+import { AuthUser } from "@/types";
 import { create } from "zustand";
 
-export interface AuthUser {
-  id: string;
-  name: string | null;
-  email: string | null;
-  phone?: string | null;
-  image: string | null;
-  role?: "ADMIN" | "USER";
-  emailVerified: boolean;
-  phoneVerified?: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+
 
 interface AuthState {
   isAuthenticated: boolean;
   user: AuthUser | null;
-  setUser: (user: AuthUser | any) => void;
+  setUser: (user: AuthUser | null) => void;
+  updateEmailVerification: (verified: boolean) => void;
   clearUser: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   user: null,
-  setUser: (user) => set({ user, isAuthenticated: true }),
+
+  // 🌟 ইউজার সেট করার সময় ইমেইল ভেরিফাইড কিনা তা চেক করে isAuthenticated সেট হবে
+  setUser: (user) =>
+    set({
+      user,
+      isAuthenticated: Boolean(user && user.emailVerified),
+    }),
+
+  // 🌟 ভেরিফিকেশন পেজ থেকে ইমেইল ভেরিফাইড হলে স্টেট আপডেট করার জন্য
+  updateEmailVerification: (verified) =>
+    set((state) => ({
+      user: state.user ? { ...state.user, emailVerified: verified } : null,
+      isAuthenticated: verified,
+    })),
+
   clearUser: () => set({ user: null, isAuthenticated: false }),
 }));

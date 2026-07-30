@@ -5,12 +5,11 @@ const phoneRegex = /^01[3-9]\d{8}$/;
 export const signUpSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().min(1, "Email is required").email("Enter a valid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
   phone: z
     .string()
-    .min(1, "Phone number is required")
-    .length(11, "Phone number must be exactly 11 digits!")
-    .regex(phoneRegex, "Please enter a valid Bangladeshi phone number!"),
+    .min(1, "Phone number is required!")
+    .regex(phoneRegex, "Must be a valid 11-digit BD number (e.g., 01712345678)"),
 });
 export type SignUpInput = z.infer<typeof signUpSchema>;
 

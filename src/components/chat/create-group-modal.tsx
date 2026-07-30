@@ -13,16 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Users, Search } from "lucide-react";
 import { useChat } from "@/hooks/use-chat";
+import { AuthUser } from "@/types";
+import { CreateGroupInput } from "@/schemas/chat.schema";
 
-interface User {
-  id?: string;
-  _id?: string;
-  name: string;
-  image?: string | null;
-}
 
 interface CreateGroupModalProps {
-  userList?: User[];
+  userList?: AuthUser[];
 }
 
 export default function CreateGroupModal({
@@ -84,7 +80,7 @@ export default function CreateGroupModal({
         userIds: selectedUserIds,
         // যদি ব্যাকএন্ডে 'members' ফিল্ড চায়, তবে নিচের লাইনটি আনকমেন্ট করতে পারেন:
         // members: selectedUserIds, 
-      } as any);
+      } as CreateGroupInput);
 
       resetForm();
       setOpen(false);
@@ -160,7 +156,7 @@ export default function CreateGroupModal({
                 </p>
               ) : (
                 filteredUsers.map((user) => {
-                  const uId = (user.id || user._id) as string;
+                  const uId = (user.id) as string;
                   const isSelected = selectedUserIds.includes(uId);
 
                   return (

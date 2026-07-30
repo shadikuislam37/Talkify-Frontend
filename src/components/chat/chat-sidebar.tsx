@@ -3,30 +3,9 @@
 import React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useOnlineUsers } from "@/hooks/use-online-users";
+import { Conversation } from "@/types";
+import { formatTime } from "@/lib/utils";
 
-export interface ConversationUser {
-  id: string;
-  name: string;
-  image?: string | null;
-}
-
-export interface ConversationMessage {
-  id: string;
-  body?: string | null;
-  image?: string | null;
-  createdAt?: string;
-  senderId?: string;
-  reads?: { userId: string }[];
-}
-
-export interface Conversation {
-  id: string;
-  isGroup?: boolean;
-  name?: string | null;
-  users?: ConversationUser[];
-  messages?: ConversationMessage[];
-  updatedAt?: string;
-}
 
 interface ChatSidebarProps {
   conversations: Conversation[];
@@ -45,16 +24,7 @@ export default function ChatSidebar({
   const safeConversations = Array.isArray(conversations) ? conversations : [];
 
   // সময় ফরম্যাট করার হেল্পার ফাংশন
-  const formatTime = (dateString?: string) => {
-    if (!dateString) return "";
-    const date = new Date(dateString);
-    const now = new Date();
 
-    if (date.toDateString() === now.toDateString()) {
-      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    }
-    return date.toLocaleDateString([], { month: "short", day: "numeric" });
-  };
 
   return (
     <div className="w-full h-full flex flex-col bg-background">

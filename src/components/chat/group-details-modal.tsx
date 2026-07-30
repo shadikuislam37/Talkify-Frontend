@@ -17,22 +17,19 @@ import {
   UserPlus,
   Loader2,
 } from "lucide-react";
+import { AuthUser } from "@/types";
 
-interface Member {
-  id: string;
-  name: string;
-  image?: string | null;
-}
+
 
 interface GroupDetailsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   conversationId: string;
   groupName: string;
-  members: Member[];
+  members: AuthUser[];
   adminIds?: string[];
   currentUserId?: string;
-  allUsers?: Member[];
+  allUsers?: AuthUser[];
 }
 
 export default function GroupDetailsModal({
@@ -143,9 +140,9 @@ export default function GroupDetailsModal({
                           />
                           <Avatar className="h-6 w-6">
                             <AvatarImage src={user.image || undefined} />
-                            <AvatarFallback className="text-[10px]">
-                              {user.name.slice(0, 2).toUpperCase()}
-                            </AvatarFallback>
+                            <AvatarFallback>
+  {user?.name ? user.name.slice(0, 2).toUpperCase() : "U"}
+</AvatarFallback>
                           </Avatar>
                           <span className="font-medium">{user.name}</span>
                         </label>

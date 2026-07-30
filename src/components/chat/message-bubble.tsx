@@ -1,33 +1,11 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Check, CheckCheck, CornerUpLeft, Reply, Trash2 } from "lucide-react";
-
-export interface Message {
-  id: string;
-  senderId?: string;
-  body?: string;
-  image?: string;
-  createdAt?: string;
-  status?: "SENT" | "DELIVERED" | "READ";
-  reads?: { userId: string; readAt?: string }[]; // 🌟 Reads Array Support
-  replyToId?: string;
-  replyTo?: {
-    id: string;
-    body?: string;
-    senderName?: string;
-    sender?: {
-      id?: string;
-      name?: string;
-    };
-  };
-  sender?: {
-    id?: string;
-    name?: string;
-    image?: string | null;
-  };
-}
+import { Message } from "@/types";
+import { formatTime } from "@/lib/utils"; // 🌟 সময় ফরম্যাট করার হেলপার ইম্পোর্ট
 
 interface MessageBubbleProps {
   msg: Message;
@@ -50,14 +28,13 @@ export function MessageBubble({
   const isMe = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
   const isHighlighted = highlightedMsgId === msg.id;
 
-  // 🌟 রিড লজিক ফিক্স: অন্য কোন ইউজার মেসেজটি পড়েছে কি না
-  // 🌟 রিড লজিক: অন্য কোনো ইউজার (আমার আইডি ছাড়া) মেসেজটি রিড করেছে কি না
-const isReadByOther = React.useMemo(() => {
-  if (msg.reads && Array.isArray(msg.reads) && msg.reads.length > 0) {
-    return msg.reads.some((r) => String(r.userId) !== String(currentUserId));
-  }
-  return msg.status === "READ";
-}, [msg.reads, msg.status, currentUserId]);
+  // 🌟 রিড লজিক: অন্য কোনো ইউজার (আমার আইডি ছাড়া) মেসেজটি রিড করেছে কি না
+  const isReadByOther = React.useMemo(() => {
+    if (msg.reads && Array.isArray(msg.reads) && msg.reads.length > 0) {
+      return msg.reads.some((r) => String(r.userId) !== String(currentUserId));
+    }
+    return msg.status === "READ";
+  }, [msg.reads, msg.status, currentUserId]);
 
   return (
     <div
@@ -82,7 +59,7 @@ const isReadByOther = React.useMemo(() => {
             </strong>{" "}
             replied to{" "}
             <strong className="font-semibold text-foreground">
-              {msg.replyTo.sender?.name || msg.replyTo.senderName || "User"}
+              {msg.replyTo.sender?.name || "User"}
             </strong>
           </span>
         </div>
@@ -92,7 +69,7 @@ const isReadByOther = React.useMemo(() => {
         {!isMe && (
           <Avatar className="h-8 w-8 mb-1">
             <AvatarImage src={msg.sender?.image || undefined} />
-            <AvatarFallback className="text-xs">
+            <AvatarFallback className="text-xs font-semibold">
               {msg.sender?.name ? msg.sender.name.slice(0, 2).toUpperCase() : "U"}
             </AvatarFallback>
           </Avatar>
@@ -150,26 +127,42 @@ const isReadByOther = React.useMemo(() => {
                 : "bg-muted/50 rounded-bl-none self-start"
             }`}
           >
+            {/* 🌟 Image Wrapper Container with relative position */}
             {msg.image && (
-              <img
-                src={msg.image}
-                alt="attachment"
-                className="rounded-md max-h-48 object-cover mb-1"
-              />
+              <div className="relative w-full min-w-[200px] h-48 mb-1 rounded-md overflow-hidden bg-muted/20">
+                <Image
+                  src={msg.image}
+                  alt="Attachment"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 260px"
+                  className="object-cover rounded-md"
+                  unoptimized
+                />
+              </div>
             )}
 
             {msg.body && <p className="text-sm font-medium break-words">{msg.body}</p>}
 
-            {/* Read / Sent Status Indicator for Sender */}
-         {isMe && (
-  <div className="flex justify-end items-center gap-1 text-[10px] opacity-80 mt-0.5">
-    {isReadByOther ? (
-      <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold" />
-    ) : (
-      <Check className="h-3.5 w-3.5 text-muted-foreground" />
-    )}
-  </div>
-)}
+            {/* 🌟 Time and Read/Sent Status Indicator */}
+            <div
+              className={`flex items-center justify-end gap-1 text-[10px] mt-0.5 ${
+                isMe ? "text-primary-foreground/80" : "text-muted-foreground"
+              }`}
+            >
+              {/* সময় প্রদর্শন */}
+              <span>{formatTime(msg.createdAt)}</span>
+
+              {/* নিজের পাঠানো মেসেজের জন্য টিক মার্ক */}
+              {isMe && (
+                <span className="ml-0.5">
+                  {isReadByOther ? (
+                    <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5 opacity-70" />
+                  )}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>

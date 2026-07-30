@@ -1,23 +1,36 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import { api, asArray } from "@/lib/api";
 
-export interface Conversation {
-  id: string;
-  name?: string;
-  isGroup?: boolean;
-  adminIds?: string[];
-  updatedAt: string;
-  users: {
-    id: string;
-    name: string;
-    image?: string | null;
-  }[];
-  messages?: {
-    body?: string | null;
-    image?: string | null;
-    createdAt: string;
-  }[];
-}
+
+import { useSyncExternalStore } from "react";
+import { useChatStore } from "@/store/use-chat-store";
+import { Conversation } from "@/types";
+
+
+
+
+
+// Hydration স্টেট ট্র্যাক করার জন্য হেলপার
+const emptySubscribe = () => () => {};
+
+export const useAuth = () => {
+  const store = useChatStore();
+
+  // Client-side রেন্ডারে true এবং Server-side-এ false রিটার্ন করবে (কোনো Effect ছাড়া)
+  const isHydrated = useSyncExternalStore(
+    emptySubscribe,
+    () => true,  // Client snapshot
+    () => false  // Server snapshot
+  );
+
+  return {
+    ...store,
+    isHydrated,
+  };
+};
+
+
+
 
 // --- CONVERSATIONS ---
 const useGetConversations = () => {

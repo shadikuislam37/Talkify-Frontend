@@ -5,13 +5,9 @@ import { useChat } from "@/hooks/use-chat";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, Loader2, X } from "lucide-react";
+import { UserProfile } from "@/types";
 
-export interface UserProfile {
-  id: string;
-  name: string;
-  email: string;
-  image?: string | null;
-}
+
 
 interface UserSearchProps {
   onSelectUser: (user: UserProfile) => void;

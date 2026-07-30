@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import Image from "next/image";
 import { useForm } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocket } from "@/hooks/use-socket";
@@ -11,14 +12,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import GroupDetailsModal from "./group-details-modal";
-import MessageBubble, { Message } from "./message-bubble";
+import { AuthUser, Conversation, Message } from "@/types";
+import MessageBubble from "./message-bubble";
 
 interface ChatBoxProps {
   conversationId: string;
   currentUserId?: string;
   currentUserName?: string;
-  conversation?: any;
-  availableUsers?: any[];
+  conversation?: Conversation;
+  availableUsers?: AuthUser[];
 }
 
 export default function ChatBox({
@@ -33,11 +35,11 @@ export default function ChatBox({
 
   const [isGroupDetailsOpen, setIsGroupDetailsOpen] = useState(false);
 
-  // 🌟 ১-টু-১ চ্যাটের জন্য অপর ইউজারকে আলাদা করা
+  // 🌟 ১-টু-১ চ্যাটের জন্য অপর ইউজারকে আলাদা করা (টাইপসেফ)
   const otherUser = React.useMemo(() => {
     if (!conversation || conversation.isGroup) return null;
     const users = conversation.users || [];
-    return users.find((u: any) => u.id !== currentUserId) || users[0];
+    return users.find((u: AuthUser) => u.id !== currentUserId) || users[0];
   }, [conversation, currentUserId]);
 
   const chatTitle = conversation?.isGroup
@@ -57,7 +59,7 @@ export default function ChatBox({
   } = useChat.useGetMessages(conversationId);
 
   const messages: Message[] = React.useMemo(() => {
-    const rawList = data?.pages.flatMap((page: any) => page) ?? [];
+    const rawList = data?.pages.flatMap((page) => page) ?? [];
     return [...rawList].reverse();
   }, [data]);
 
@@ -116,31 +118,31 @@ export default function ChatBox({
       );
     };
 
-   const handleStatusChange = (data: { messageId: string; userId: string; status: string }) => {
-    queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
-      if (!oldData) return oldData;
-      return {
-        ...oldData,
-        pages: oldData.pages.map((page: Message[]) =>
-          page.map((msg) => {
-            if (msg.id === data.messageId) {
-              const existingReads = msg.reads || [];
-              const alreadyRead = existingReads.some((r) => String(r.userId) === String(data.userId));
+    const handleStatusChange = (data: { messageId: string; userId: string; status: string }) => {
+      queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page: Message[]) =>
+            page.map((msg) => {
+              if (msg.id === data.messageId) {
+                const existingReads = msg.reads || [];
+                const alreadyRead = existingReads.some((r) => String(r.userId) === String(data.userId));
 
-              return {
-                ...msg,
-                status: data.status as any,
-                reads: alreadyRead
-                  ? existingReads
-                  : [...existingReads, { userId: data.userId, readAt: new Date().toISOString() }],
-              };
-            }
-            return msg;
-          })
-        ),
-      };
-    });
-  };
+                return {
+                  ...msg,
+                  status: data.status as any,
+                  reads: alreadyRead
+                    ? existingReads
+                    : [...existingReads, { userId: data.userId, readAt: new Date().toISOString() }],
+                };
+              }
+              return msg;
+            })
+          ),
+        };
+      });
+    };
 
     socket.on("receive_message", handleNewMessage);
     socket.on("on_message_status_change", handleStatusChange);
@@ -153,34 +155,29 @@ export default function ChatBox({
     };
   }, [socket, conversationId, queryClient]);
 
-  // 🌟 আনরিড মেসেজ রিড করার ট্র্রিগার (একদম নিখুঁত ফিক্স)
-useEffect(() => {
-  if (!socket || !conversationId || !currentUserId || messages.length === 0) return;
+  // 🌟 আনরিড মেসেজ রিড করার ট্র্রিগার
+  useEffect(() => {
+    if (!socket || !conversationId || !currentUserId || messages.length === 0) return;
 
-  const incomingUnreadMessages = messages.filter((m) => {
-    const msgSenderId = m.senderId || m.sender?.id;
-    const isMyMessage = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
-    
-    // Check: reads অ্যারেতে আমার ID অলরেডি আছে কিনা
-    const alreadyReadByMe = m.reads?.some((r) => String(r.userId) === String(currentUserId));
+    const incomingUnreadMessages = messages.filter((m) => {
+      const msgSenderId = m.senderId || m.sender?.id;
+      const isMyMessage = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
+      const alreadyReadByMe = m.reads?.some((r) => String(r.userId) === String(currentUserId));
 
-    // ১. আমার পাঠানো মেসেজ নয়
-    // ২. স্ট্যাটাস এখনো READ নয়
-    // ৩. আমার আইডি এখনো reads অ্যারেতে যুক্ত হয়নি
-    return !isMyMessage && m.status !== "READ" && !alreadyReadByMe;
-  });
-
-  if (incomingUnreadMessages.length > 0) {
-    incomingUnreadMessages.forEach((msg) => {
-      socket.emit("update_message_status", {
-        messageId: msg.id,
-        conversationId,
-        userId: currentUserId,
-        status: "READ",
-      });
+      return !isMyMessage && m.status !== "READ" && !alreadyReadByMe;
     });
-  }
-}, [socket, conversationId, messages, currentUserId]);
+
+    if (incomingUnreadMessages.length > 0) {
+      incomingUnreadMessages.forEach((msg) => {
+        socket.emit("update_message_status", {
+          messageId: msg.id,
+          conversationId,
+          userId: currentUserId,
+          status: "READ",
+        });
+      });
+    }
+  }, [socket, conversationId, messages, currentUserId]);
 
   const handleObserver = useCallback(
     (entries: IntersectionObserverEntry[]) => {
@@ -241,7 +238,7 @@ useEffect(() => {
     };
   }, [socket, conversationId]);
 
-  // 🌟 TanStack Form সাথে conversationId ফিক্স
+  // 🌟 TanStack Form হ্যান্ডলিং
   const form = useForm({
     defaultValues: {
       body: "",
@@ -250,7 +247,6 @@ useEffect(() => {
     } as SendMessageInput,
     validators: { onChange: sendMessageSchema },
     onSubmit: async ({ value }) => {
-      // 🌟 conversationId নিশ্চিত ফিক্সড
       const activeId = conversationId || value.conversationId;
 
       if (!activeId || (!value.body?.trim() && !selectedImage)) return;
@@ -271,7 +267,7 @@ useEffect(() => {
           socket.emit("send_message", { conversationId: activeId, message: newMsg });
         }
 
-        form.reset();
+        form.reset({ body: "", image: "", conversationId: activeId });
         setSelectedImage(null);
         setReplyingTo(null);
       } catch (err) {
@@ -280,7 +276,6 @@ useEffect(() => {
     },
   });
 
-  // conversationId চেঞ্জ হলে তানস্ট্যাক ফর্মে সিঙ্ক রাখা
   useEffect(() => {
     if (conversationId) {
       form.setFieldValue("conversationId", conversationId);
@@ -326,7 +321,6 @@ useEffect(() => {
 
   return (
     <div className="flex flex-col h-full border rounded-md p-4 bg-background relative">
-      
       {/* CHAT HEADER SECTION */}
       <div className="flex items-center justify-between border-b pb-3 mb-3">
         <div 
@@ -358,14 +352,16 @@ useEffect(() => {
         </div>
 
         {conversation?.isGroup && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={() => setIsGroupDetailsOpen(true)}
-            className="p-2 hover:bg-muted rounded-full text-muted-foreground transition-colors"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
             title="Group Info"
           >
             <Info className="h-4 w-4" />
-          </button>
+          </Button>
         )}
       </div>
 
@@ -422,31 +418,41 @@ useEffect(() => {
             </span>
             <span className="text-muted-foreground truncate block">{replyingTo.body || "Image"}</span>
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={() => setReplyingTo(null)}
-            className="p-1 hover:bg-background rounded-full text-muted-foreground"
+            className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
           >
             <X className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         </div>
       )}
 
-      {/* Selected Image Preview */}
+      {/* Selected Image Preview with Next.js Image */}
       {selectedImage && (
-        <div className="relative w-16 h-16 mb-2 border rounded-md overflow-hidden">
-          <img src={selectedImage} alt="preview" className="w-full h-full object-cover" />
+        <div className="relative w-16 h-16 mb-2 border rounded-md overflow-hidden bg-muted">
+          <Image
+            src={selectedImage}
+            alt="Preview of uploaded image"
+            fill
+            sizes="64px"
+            className="object-cover"
+            unoptimized
+          />
           <button
             type="button"
             onClick={() => setSelectedImage(null)}
-            className="absolute top-0 right-0 bg-black/60 text-white p-0.5 rounded-bl"
+            className="absolute top-0 right-0 z-10 bg-black/60 text-white p-0.5 rounded-bl hover:bg-black/80 transition-colors"
+            title="Remove image"
           >
             <X className="h-3 w-3" />
           </button>
         </div>
       )}
 
-      {/* Input Form */}
+      {/* Input Form with TanStack Form */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -455,7 +461,7 @@ useEffect(() => {
         }}
         className="flex gap-2 items-center"
       >
-        <label className="cursor-pointer p-2 hover:bg-muted rounded-md text-muted-foreground transition-colors">
+        <label className="cursor-pointer p-2 hover:bg-muted rounded-md text-muted-foreground transition-colors flex items-center justify-center">
           <Paperclip className="h-4 w-4" />
           <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
         </label>
@@ -473,17 +479,18 @@ useEffect(() => {
                 onBlur={field.handleBlur}
                 placeholder="Type a message..."
                 autoComplete="off"
+                className="h-10"
               />
             </div>
           )}
         </form.Field>
 
-        <Button type="submit" disabled={isSending} size="icon">
+        <Button type="submit" disabled={isSending} size="icon" className="h-10 w-10">
           {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </form>
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation Modal using Shadcn styling */}
       {deletingMessageId && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-background border rounded-lg p-6 max-w-sm w-full shadow-lg space-y-4 animate-in fade-in zoom-in duration-150">
@@ -528,7 +535,6 @@ useEffect(() => {
           allUsers={availableUsers}
         />
       )}
-
     </div>
   );
 }
