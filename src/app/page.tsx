@@ -19,7 +19,7 @@ export default function HomePage() {
         
         {/* Hero Text */}
         <h1 className="mb-6 text-balance text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-7xl">
-          Connect effortlessly with <span className="text-primary">ChatApp</span>
+          Connect effortlessly with <span className="text-primary">SayHi</span>
         </h1>
         
         <p className="mb-10 max-w-2xl text-balance text-lg text-muted-foreground sm:text-xl">

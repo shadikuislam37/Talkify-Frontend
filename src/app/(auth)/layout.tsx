@@ -18,7 +18,7 @@ export default function AuthLayout({
           <div className="rounded-xl bg-white/10 p-2 backdrop-blur-sm">
             <MessageSquare className="h-6 w-6 text-white" />
           </div>
-          ChatApp
+          Talkify
         </div>
         
         {/* Bottom Quote / Content */}
@@ -28,7 +28,7 @@ export default function AuthLayout({
   &quot;Experience seamless, real-time communication. Connecting with your team has never been this effortless.&quot;
 </p>
             <footer className="text-base font-medium text-zinc-400">
-              — The ChatApp Team
+              — The Talkify Team
             </footer>
           </blockquote>
         </div>
