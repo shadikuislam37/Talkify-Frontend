@@ -520,7 +520,7 @@ export default function ChatBox({
       </div>
 
       {/* MESSAGES LIST AREA */}
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col justify-end min-h-0">
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col  min-h-0">
         <div ref={observerTargetRef} className="h-2 w-full">
           {isFetchingNextPage && (
             <div className="flex justify-center py-2">

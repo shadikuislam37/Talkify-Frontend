@@ -10,10 +10,13 @@ export const useGetMessages = (conversationId: string | null) => {
       const res = await api.get(`/messages/${conversationId}`, {
         params: { cursor: pageParam },
       });
-      return asArray<Message>(res);
+      return res.data; // 🌟 ডাটা আগের মতোই Array হিসেবে আসবে
     },
-    getNextPageParam: (lastPage: any) =>
-      Array.isArray(lastPage) && lastPage.length ? lastPage[lastPage.length - 1].id : undefined,
+    // 🌟 FIX: Array তে যদি ২০টা আইটেম থাকে, তবে শেষেরটার ID টাই হলো nextCursor
+    getNextPageParam: (lastPage: any) => 
+      Array.isArray(lastPage) && lastPage.length === 20 
+        ? lastPage[19].id 
+        : undefined,
     initialPageParam: undefined,
   });
 };
