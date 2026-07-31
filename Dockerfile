@@ -4,7 +4,7 @@ WORKDIR /app
 
 # ডিপেন্ডেন্সি ফাইল কপি ও ইনস্টল করা
 COPY package*.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # প্রজেক্টের বাকি কোড কপি করা
 COPY . .
