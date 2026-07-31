@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { getClientMessaging } from "@/lib/firebase"; // নিরাপদ ফাংশনটি ইম্পোর্ট করুন
 
 // ১. সাউন্ড বাজানো
 export const playNotificationSound = () => {
@@ -22,9 +23,15 @@ export const requestNotificationPermission = async () => {
       const permission = await Notification.requestPermission();
       
       if (permission === "granted") {
-        // ডাইনামিক ইম্পোর্ট (যাতে সার্ভার সাইডে ক্র্যাশ না করে)
+        // ডাইনামিকালি সেফ মেসেজিং ইন্সট্যান্স নিয়ে আসা
+        const messaging = await getClientMessaging();
+        
+        if (!messaging) {
+          console.warn("Firebase Messaging is not supported in this browser.");
+          return;
+        }
+
         const { getToken } = await import("firebase/messaging");
-        const { messaging } = await import("@/lib/firebase");
 
         const token = await getToken(messaging, {
           vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,

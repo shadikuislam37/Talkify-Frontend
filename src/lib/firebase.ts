@@ -1,5 +1,4 @@
-// src/lib/firebase.ts
-import { initializeApp, getApps, getApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import { getMessaging, isSupported } from "firebase/messaging";
 
 const firebaseConfig = {
@@ -11,17 +10,13 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// অ্যাপ ডাবল ইনিশিয়ালাইজেশন রোধ করতে চেক করা
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 
-export let messaging: any = null;
-
-if (typeof window !== "undefined") {
-  isSupported().then((supported) => {
-    if (supported) {
-      messaging = getMessaging(app);
-    }
-  });
-}
-
-export { app };
+export const getClientMessaging = async () => {
+  if (typeof window === "undefined") return null;
+  const supported = await isSupported();
+  if (supported) {
+    return getMessaging(app);
+  }
+  return null;
+};

@@ -1,4 +1,5 @@
 "use client";
+
 import { useReactionStore } from "@/store/use-reaction-store";
 import React, { useState } from "react";
 import Image from "next/image";
@@ -38,6 +39,8 @@ export function MessageBubble({
   const isMe = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
   const isHighlighted = highlightedMsgId === msg.id;
 
+  const isDeleted = !msg.body && !msg.image && !msg.fileUrl;
+
   const reactionsMap = useReactionStore((state) => state.reactionsMap);
   const currentReactions = reactionsMap[msg.id] || msg.reactions || [];
 
@@ -63,7 +66,7 @@ export function MessageBubble({
         isHighlighted ? "bg-primary/20 ring-2 ring-primary/40" : ""
       } ${isMe ? "items-end" : "items-start"}`}
     >
-      {msg.replyTo && (
+      {!isDeleted && msg.replyTo && (
         <div
           onClick={() => {
             const targetId = msg.replyToId || msg.replyTo?.id;
@@ -94,111 +97,110 @@ export function MessageBubble({
           </Avatar>
         )}
 
-        {/* Action Controls (Hover) */}
-        <div
-          className={`hidden group-hover:flex items-center gap-1 ${
-            isMe ? "order-first" : "order-last"
-          }`}
-        >
-          {onReaction && (
-            <div className="relative">
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setShowReactionPicker(!showReactionPicker)}
-                title="React"
-                className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors cursor-pointer inline-flex items-center justify-center"
-              >
-                <Smile className="h-3.5 w-3.5" />
-              </div>
-
-              {showReactionPicker && (
-                <div className={`absolute bottom-full mb-1 z-50 flex items-center gap-1.5 p-1.5 rounded-full shadow-lg bg-background border ${isMe ? "right-0" : "left-0"}`}>
-                  {EMOJIS.map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => {
-                        onReaction(msg.id, emoji);
-                        setShowReactionPicker(false);
-                      }}
-                      className="hover:bg-muted p-1.5 rounded-full text-base transition-transform hover:scale-125 focus:outline-none cursor-pointer"
-                    >
-                      {emoji}
-                    </button>
-                  ))}
+        {!isDeleted && (
+          <div
+            className={`hidden group-hover:flex items-center gap-1 ${
+              isMe ? "order-first" : "order-last"
+            }`}
+          >
+            {onReaction && (
+              <div className="relative">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setShowReactionPicker(!showReactionPicker)}
+                  title="React"
+                  className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors cursor-pointer inline-flex items-center justify-center"
+                >
+                  <Smile className="h-3.5 w-3.5" />
                 </div>
-              )}
-            </div>
-          )}
 
-          {/* Edit Button */}
-          {isMe && onEdit && (
-            <button
-              type="button"
-              onClick={() => onEdit(msg.id, msg.body || "")}
-              title="Edit message"
-              className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
-            >
-              <Edit2 className="h-3.5 w-3.5" />
-            </button>
-          )}
+                {showReactionPicker && (
+                  <div className={`absolute bottom-full mb-1 z-50 flex items-center gap-1.5 p-1.5 rounded-full shadow-lg bg-background border ${isMe ? "right-0" : "left-0"}`}>
+                    {EMOJIS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => {
+                          onReaction(msg.id, emoji);
+                          setShowReactionPicker(false);
+                        }}
+                        className="hover:bg-muted p-1.5 rounded-full text-base transition-transform hover:scale-125 focus:outline-none cursor-pointer"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
-          {onReply && (
-            <button
-              type="button"
-              onClick={() => onReply(msg)}
-              title="Reply"
-              className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
-            >
-              <Reply className="h-3.5 w-3.5" />
-            </button>
-          )}
-
-          {/* Single Delete Dropdown Menu */}
-          {isMe && (
-            <div className="relative">
+            {isMe && onEdit && (
               <button
                 type="button"
-                onClick={() => setShowDeleteMenu(!showDeleteMenu)}
-                title="Delete options"
+                onClick={() => onEdit(msg.id, msg.body || "")}
+                title="Edit message"
                 className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <Edit2 className="h-3.5 w-3.5" />
               </button>
+            )}
 
-              {showDeleteMenu && (
-                <div className={`absolute bottom-full mb-1 z-50 flex flex-col py-1 w-36 rounded-md shadow-lg bg-background border ${isMe ? "right-0" : "left-0"}`}>
-                  {onDelete && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onDelete(msg.id);
-                        setShowDeleteMenu(false);
-                      }}
-                      className="text-left px-3 py-1.5 text-xs hover:bg-muted text-red-500 transition-colors cursor-pointer font-medium"
-                    >
-                      Delete for Everyone
-                    </button>
-                  )}
+            {onReply && (
+              <button
+                type="button"
+                onClick={() => onReply(msg)}
+                title="Reply"
+                className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
+              >
+                <Reply className="h-3.5 w-3.5" />
+              </button>
+            )}
 
-                  {onDeleteForMe && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onDeleteForMe(msg.id);
-                        setShowDeleteMenu(false);
-                      }}
-                      className="text-left px-3 py-1.5 text-xs hover:bg-muted text-foreground transition-colors cursor-pointer"
-                    >
-                      Delete for Me
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+            {isMe && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteMenu(!showDeleteMenu)}
+                  title="Delete options"
+                  className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+
+                {showDeleteMenu && (
+                  <div className={`absolute bottom-full mb-1 z-50 flex flex-col py-1 w-36 rounded-md shadow-lg bg-background border ${isMe ? "right-0" : "left-0"}`}>
+                    {onDelete && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onDelete(msg.id);
+                          setShowDeleteMenu(false);
+                        }}
+                        className="text-left px-3 py-1.5 text-xs hover:bg-muted text-red-500 transition-colors cursor-pointer font-medium"
+                      >
+                        Delete for Everyone
+                      </button>
+                    )}
+
+                    {onDeleteForMe && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onDeleteForMe(msg.id);
+                          setShowDeleteMenu(false);
+                        }}
+                        className="text-left px-3 py-1.5 text-xs hover:bg-muted text-foreground transition-colors cursor-pointer"
+                      >
+                        Delete for Me
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col max-w-[70%] relative">
           {isGroup && !isMe && msg.sender?.name && (
@@ -207,7 +209,7 @@ export function MessageBubble({
             </span>
           )}
 
-          {msg.replyTo && (
+          {!isDeleted && msg.replyTo && (
             <div
               onClick={() => {
                 const targetId = msg.replyToId || msg.replyTo?.id;
@@ -230,26 +232,84 @@ export function MessageBubble({
                 : "bg-muted/50 rounded-bl-none self-start"
             }`}
           >
-            {msg.image && (
-              <div className="relative w-full min-w-[200px] h-48 mb-1 rounded-md overflow-hidden bg-muted/20">
-                <Image
-                  src={msg.image}
-                  alt="Attachment"
-                  fill
-                  sizes="(max-width: 768px) 100vw, 260px"
-                  className="object-cover rounded-md"
-                  unoptimized
-                />
+            {/* 🌟 Reply inside bubble with proper contrast */}
+            {!isDeleted && msg.replyTo && (
+              <div
+                onClick={() => {
+                  const targetId = msg.replyToId || msg.replyTo?.id;
+                  if (targetId && onScrollToReply) onScrollToReply(targetId);
+                }}
+                className={`cursor-pointer text-xs p-2 rounded-xl mb-1.5 border truncate ${
+                  isMe
+                    ? "bg-black/20 border-white/20 text-white"
+                    : "bg-muted/60 border-border/60 text-foreground"
+                }`}
+              >
+                <p className="truncate text-[11px] font-medium">{msg.replyTo.body || "Attachment"}</p>
               </div>
             )}
 
-            {msg.body && <p className="text-sm font-medium break-words">{msg.body}</p>}
+            {isDeleted ? (
+              <p className="text-xs italic opacity-80 select-none">
+                {isMe ? "You deleted a message" : `${msg.sender?.name || "Someone"} deleted a message`}
+              </p>
+            ) : (
+              <>
+                {msg.image && (
+                  <div className="relative w-full min-w-[200px] h-48 mb-1 rounded-md overflow-hidden bg-muted/20">
+                    <Image
+                      src={msg.image}
+                      alt="Attachment"
+                      fill
+                      sizes="(max-width: 768px) 100vw, 260px"
+                      className="object-cover rounded-md"
+                      unoptimized
+                    />
+                  </div>
+                )}
+
+                {msg.fileUrl && (
+                  <div className="mt-1">
+                    {msg.fileType?.startsWith("image/") ? (
+                      <div className="relative w-64 h-48 max-w-xs rounded-lg overflow-hidden">
+                        <Image 
+                          src={msg.fileUrl} 
+                          alt="attachment" 
+                          fill 
+                          sizes="(max-width: 768px) 100vw, 256px"
+                          className="object-cover" 
+                        />
+                      </div>
+                    ) : (
+                      <a 
+                        href={msg.fileUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 bg-muted/60 rounded-xl border hover:bg-muted transition"
+                      >
+                        <span className="text-2xl">📄</span>
+                        <div className="overflow-hidden">
+                          <p className="text-xs font-semibold truncate">{msg.fileName || "Attachment"}</p>
+                          <span className="text-[10px] text-muted-foreground uppercase">{msg.fileType?.split("/")[1] || "FILE"}</span>
+                        </div>
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {msg.body && <p className="text-sm font-medium break-words">{msg.body}</p>}
+              </>
+            )}
 
             <div
               className={`flex items-center justify-end gap-1 text-[10px] mt-0.5 ${
                 isMe ? "text-primary-foreground/80" : "text-muted-foreground"
               }`}
             >
+              {msg.isEdited && !isDeleted && (
+                <span className="italic opacity-70 mr-1 select-none">(edited)</span>
+              )}
+
               <span>{formatTime(msg.createdAt)}</span>
 
               {isMe && (
@@ -264,7 +324,7 @@ export function MessageBubble({
             </div>
           </div>
 
-          {currentReactions.length > 0 && (
+          {!isDeleted && currentReactions.length > 0 && (
             <div
               className={`absolute -bottom-2 ${
                 isMe ? "right-2" : "left-2"

@@ -1,28 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
-  <!-- Outer Border (Light Gray / Subtle Outline) -->
-  <rect x="2" y="2" width="96" height="96" rx="28" fill="#d0d5dd" />
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="cyanBubble" x1="255" y1="250" x2="590" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#21E6E6"/>
+      <stop offset="1" stop-color="#079DDB"/>
+    </linearGradient>
 
-  <!-- Inner Background (Dark Square with Rounded Corners) -->
-  <rect x="6" y="6" width="88" height="88" rx="24" fill="#18181b" />
+    <linearGradient id="purpleBubble" x1="455" y1="290" x2="760" y2="530" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6F52FF"/>
+      <stop offset="1" stop-color="#C74DFF"/>
+    </linearGradient>
 
-  <!-- Message Bubble Icon (White Outline) -->
-  <path 
-    d="M 33 32 
-       H 67 
-       A 6 6 0 0 1 73 38 
-       V 58 
-       A 6 6 0 0 1 67 64 
-       H 41 
-       L 31 71 
-       V 64 
-       H 33 
-       A 6 6 0 0 1 27 58 
-       V 38 
-       A 6 6 0 0 1 33 32 Z" 
-    fill="none" 
-    stroke="#ffffff" 
-    stroke-width="4.5" 
-    stroke-linecap="round" 
-    stroke-linejoin="round" 
-  />
+    <linearGradient id="wordGradient" x1="250" y1="590" x2="760" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#16D9E3"/>
+      <stop offset="0.52" stop-color="#3574F4"/>
+      <stop offset="1" stop-color="#B648FF"/>
+    </linearGradient>
+
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="170%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#4C55D9" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <!-- Transparent background -->
+
+  <g filter="url(#softShadow)">
+    <!-- Left speech bubble -->
+    <path
+      d="M286 318C286 247.308 343.308 190 414 190H497C567.692 190 625 247.308 625 318V337C625 407.692 567.692 465 497 465H430L371.792 507.394C358.584 517.018 340 507.584 340 491.246V452.509C307.085 430.287 286 392.647 286 350V318Z"
+      fill="url(#cyanBubble)"
+    />
+
+    <!-- Right speech bubble -->
+    <path
+      d="M442 338C442 267.308 499.308 210 570 210H651C721.692 210 779 267.308 779 338V359C779 426.456 726.744 481.714 660.5 486.637V523.93C660.5 540.271 641.904 549.7 628.699 540.064L562 491.39H570C499.308 491.39 442 434.082 442 363.39V338Z"
+      fill="url(#purpleBubble)"
+      fill-opacity="0.94"
+    />
+
+    <!-- Conversation dots -->
+    <circle cx="405" cy="337" r="18" fill="white" fill-opacity="0.96"/>
+    <circle cx="535" cy="357" r="18" fill="white" fill-opacity="0.92"/>
+    <circle cx="650" cy="357" r="18" fill="white" fill-opacity="0.96"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text
+    x="512"
+    y="700"
+    text-anchor="middle"
+    fill="url(#wordGradient)"
+    font-family="Nunito, Poppins, Avenir Next, Arial Rounded MT Bold, sans-serif"
+    font-size="150"
+    font-weight="700"
+    letter-spacing="-7"
+  >Talkify</text>
 </svg>

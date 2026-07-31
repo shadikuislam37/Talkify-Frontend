@@ -19,6 +19,7 @@ import { useOnlineUsers } from "@/hooks/use-online-users";
 import { formatLastSeen } from "@/lib/utils";
 import { useEditMessage } from "@/hooks/use-message-edit-delete";
 import { api } from "@/lib/api";
+import { supabaseClient } from "@/lib/uploadSupabase";
 
 interface ChatBoxProps {
   conversationId: string;
@@ -186,16 +187,31 @@ export default function ChatBox({
       addOrUpdateReaction(data.messageId, data.reaction);
     };
 
+    // 🌟 রিয়েল-টাইম মেসেজ এডিট হ্যান্ডলার
+    const handleMessageEdited = (updatedMessage: Message) => {
+      queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page: Message[]) =>
+            page.map((msg) => (msg.id === updatedMessage.id ? updatedMessage : msg))
+          ),
+        };
+      });
+    };
+
     socket.on("receive_message", handleNewMessage);
     socket.on("on_message_status_change", handleStatusChange);
     socket.on("message_read", handleStatusChange);
     socket.on("receive_reaction", handleReceiveReaction);
+    socket.on("on_message_edited", handleMessageEdited);
 
     return () => {
       socket.off("receive_message", handleNewMessage);
       socket.off("on_message_status_change", handleStatusChange);
       socket.off("message_read", handleStatusChange);
       socket.off("receive_reaction", handleReceiveReaction);
+      socket.off("on_message_edited", handleMessageEdited);
     };
   }, [socket, conversationId, queryClient, addOrUpdateReaction]);
 
@@ -263,25 +279,37 @@ export default function ChatBox({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setIsUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-
     try {
-      const res = await api.post("/media/upload", formData);
-      const data = res.data;
+      const fileName = `${Date.now()}-${file.name}`;
+      const { data, error } = await supabaseClient.storage
+        .from("chat-uploads")
+        .upload(fileName, file);
 
-      if (data.success) {
-        setSelectedImage(data.data.fileUrl);
-      } else {
-        alert(data.message || "File upload failed!");
-      }
-    } catch (error) {
-      console.error("Upload error:", error);
-      alert("Something went wrong while uploading!");
-    } finally {
-      setIsUploading(false);
-      e.target.value = "";
+      if (error) throw error;
+
+      const { data: publicUrlData } = supabaseClient.storage
+        .from("chat-uploads")
+        .getPublicUrl(fileName);
+
+      const fileUrl = publicUrlData.publicUrl;
+
+      const newMessage = {
+        body: "",
+        fileUrl: fileUrl,
+        fileName: file.name,
+        fileType: file.type,
+        conversationId: conversationId,
+        senderId: currentUserId,
+        createdAt: new Date(),
+      };
+
+      socket.emit("send_message", {
+        conversationId,
+        message: newMessage,
+      });
+
+    } catch (err) {
+      console.error("File upload error:", err);
     }
   };
 
@@ -372,21 +400,23 @@ export default function ChatBox({
     }
   };
 
-const handleSaveEdit = async (messageId: string) => {
-  if (!editText.trim()) return;
-  try {
-    // 🌟 ব্যাকএন্ডের এডিট রাউট অনুযায়ী এখানে এপিআই কল করা হলো
-    await api.patch(`/messages/edit/${messageId}`, { newBody: editText.trim() });
+  const handleSaveEdit = async (messageId: string) => {
+    if (!editText.trim()) return;
+    try {
+      await api.patch(`/messages/edit/${messageId}`, { newBody: editText.trim() });
 
-    setEditingMessageId(null);
-    setEditText("");
-    
-    // মেসেজ লিস্ট রিফ্রেশ করার জন্য কুয়েরি ইনভ্যালিডেট করা
-    queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
-  } catch (err) {
-    console.error("Failed to edit message:", err);
-  }
-};
+      if (socket && conversationId) {
+        socket.emit("edit_message", { messageId, newBody: editText.trim(), conversationId });
+      }
+
+      setEditingMessageId(null);
+      setEditText("");
+      
+      queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
+    } catch (err) {
+      console.error("Failed to edit message:", err);
+    }
+  };
 
   const confirmDeleteMessage = async () => {
     if (!deletingMessageId) return;
@@ -522,29 +552,26 @@ const handleSaveEdit = async (messageId: string) => {
                     setEditingMessageId(id);
                     setEditText(currentText);
                   }}
-      
                   onDelete={(id) => {
                     setDeletingMessageId(id);
                   }}
+                  onDeleteForMe={async (msgId) => {
+                    try {
+                      await api.post(`/messages/delete-for-me/${msgId}`);
 
-                  
-   onDeleteForMe={async (msgId) => {
-    try {
-      await api.post(`/messages/delete-for-me/${msgId}`);
-
-      queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page: Message[]) =>
-            page.filter((m) => m.id !== msgId)
-          ),
-        };
-      });
-    } catch (err) {
-      console.error("Failed to delete message for me:", err);
-    }
-  }}
+                      queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
+                        if (!oldData) return oldData;
+                        return {
+                          ...oldData,
+                          pages: oldData.pages.map((page: Message[]) =>
+                            page.filter((m) => m.id !== msgId)
+                          ),
+                        };
+                      });
+                    } catch (err) {
+                      console.error("Failed to delete message for me:", err);
+                    }
+                  }}
                   onReaction={async (msgId, emoji) => {
                     try {
                       await reactToMessage({ messageId: msgId, emoji });
@@ -567,6 +594,16 @@ const handleSaveEdit = async (messageId: string) => {
                     <Input
                       value={editText}
                       onChange={(e) => setEditText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleSaveEdit(msg.id);
+                        } else if (e.key === "Escape") {
+                          e.preventDefault();
+                          setEditingMessageId(null);
+                        }
+                      }}
+                      autoFocus
                       className="h-8 text-xs"
                     />
                     <Button size="sm" onClick={() => handleSaveEdit(msg.id)} className="h-8 px-2">

@@ -24,13 +24,17 @@ export const formatTime = (dateStr?: string | Date | null) => {
 
 // lib/utils.ts
 
-export function formatLastSeen(dateString?: string | Date): string {
+export function formatLastSeen(dateString?: string | Date | null): string {
   if (!dateString) return "Offline";
 
   const date = new Date(dateString);
   const now = new Date();
+  
+  if (isNaN(date.getTime())) return "Offline";
+
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
+  // যদি নেগেটিভ টাইম হয় (টাইমজোন বা ক্লক সিন্ক ইস্যুর কারণে), তবে Active just now দেখাবে
   if (diffInSeconds < 60) {
     return "Active just now";
   }

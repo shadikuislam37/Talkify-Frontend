@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "ChatApp - Connect with your friends and team",
+  title: "Talkify - Connect with your friends and team",
   description: "A fast, secure, and modern real-time chat platform.",
 };
 

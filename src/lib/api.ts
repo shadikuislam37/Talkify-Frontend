@@ -14,13 +14,13 @@ export class ApiError extends Error {
   }
 }
 
-// Axios ইন্সট্যান্স তৈরি
+// Axios ইন্সট্যান্স তৈরি   headers: {
+  //   "Content-Type": "application/json",
+  // },
 const axiosInstance = axios.create({
   baseURL: API_URL,
   withCredentials: true,
-  headers: {
-    "Content-Type": "application/json",
-  },
+ 
 });
 
 // Response Interceptor

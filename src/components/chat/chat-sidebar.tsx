@@ -31,10 +31,10 @@ export default function ChatSidebar({
             No conversations found
           </p>
         ) : (
-          safeConversations.map((conv) => {
+          safeConversations.map((conv: any) => {
             const usersList = conv.users || [];
             const otherUser = currentUserId
-              ? usersList.find((u) => u.id !== currentUserId) || usersList[0]
+              ? usersList.find((u: any) => u.id !== currentUserId) || usersList[0]
               : usersList[0];
 
             // ১-টু-১ চ্যাটের জন্য অনলাইন স্ট্যাটাস
@@ -44,31 +44,31 @@ export default function ChatSidebar({
               ? conv.name || "Group Chat"
               : otherUser?.name || conv.name || "Unknown User";
 
-            // 🌟 গ্রুপের ক্ষেত্রে ছবি থাকলে conv.image, অন্যথা ১-টু-১ యూজারের ছবি
+            // গ্রুপের ক্ষেত্রে ছবি থাকলে conv.image, অন্যথা ১-টু-১ ইউজারের ছবি
             const avatarImage = conv.isGroup ? conv.image : otherUser?.image;
 
             const lastMsgObj = conv.messages?.[0];
             
-            // 🌟 গ্রুপের লাস্ট মেসেজে প্রেরকের নাম যোগ করা (যেমন: "Karim: Hello")
+            // 🌟 স্ক্রিনশটের মতো ডিলিট মেসেজ প্রিভিউ হ্যান্ডেল করার লজিক
             let lastMessageText = "No messages yet";
             if (lastMsgObj) {
-              const senderName =
-                lastMsgObj.senderId === currentUserId
-                  ? "You"
-                  : lastMsgObj.sender?.name?.split(" ")[0] || "Someone";
+              const isMyMessage = lastMsgObj.senderId === currentUserId;
+              const senderName = isMyMessage ? "You" : lastMsgObj.sender?.name || "Someone";
 
-              const content = lastMsgObj.body || (lastMsgObj.image ? "📷 Photo" : "");
-
-              lastMessageText = conv.isGroup
-                ? `${senderName}: ${content}`
-                : content;
+              const isDeleted = !lastMsgObj.body && !lastMsgObj.image && !lastMsgObj.fileUrl;
+              
+              if (isDeleted) {
+                lastMessageText = conv.isGroup
+                  ? `${senderName} deleted a message`
+                  : isMyMessage ? "You deleted a message" : `${chatName} deleted a message`;
+              } else {
+                const content = lastMsgObj.body || (lastMsgObj.image ? "📷 Photo" : lastMsgObj.fileUrl ? "📁 Attachment" : "");
+                lastMessageText = conv.isGroup ? `${senderName}: ${content}` : content;
+              }
             }
 
-            // আনরিড মেসেজ চেক
-            const isUnread =
-              lastMsgObj &&
-              lastMsgObj.senderId !== currentUserId &&
-              !lastMsgObj.reads?.some((r) => String(r.userId) === String(currentUserId));
+            // ব্যাকএন্ড থেকে আসা unreadCount সংখ্যাটি নেওয়া হলো
+            const unreadCount = conv.unreadCount || 0;
 
             return (
               <button
@@ -103,9 +103,11 @@ export default function ChatSidebar({
                 {/* Chat Name & Message Preview */}
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-baseline mb-0.5">
-                    <p className="text-sm font-semibold truncate">{chatName}</p>
+                    <p className={`text-sm truncate ${unreadCount > 0 ? "font-bold text-foreground" : "font-semibold"}`}>
+                      {chatName}
+                    </p>
                     {lastMsgObj?.createdAt && (
-                      <span className="text-[10px] text-muted-foreground shrink-0">
+                      <span className={`text-[10px] shrink-0 ${unreadCount > 0 ? "font-bold text-primary" : "text-muted-foreground"}`}>
                         {formatTime(lastMsgObj.createdAt)}
                       </span>
                     )}
@@ -114,15 +116,19 @@ export default function ChatSidebar({
                   <div className="flex justify-between items-center gap-1">
                     <p
                       className={`text-xs truncate ${
-                        isUnread
+                        unreadCount > 0
                           ? "font-bold text-foreground"
                           : "text-muted-foreground"
                       }`}
                     >
                       {lastMessageText}
                     </p>
-                    {isUnread && (
-                      <span className="h-2 w-2 rounded-full bg-primary shrink-0" />
+
+                    {/* মেসেঞ্জারের মতো আনরেড কাউন্ট ব্যাজ */}
+                    {unreadCount > 0 && (
+                      <span className="bg-primary text-primary-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 min-w-[18px] text-center">
+                        {unreadCount}
+                      </span>
                     )}
                   </div>
                 </div>
