@@ -103,7 +103,8 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
           </div>
 
           <div className="absolute bottom-20 right-4 w-36 h-48 bg-black rounded-lg overflow-hidden border-2 border-background shadow-lg">
-            <video ref={myVideoRef} autoPlay playsInline mutedclassName="w-full h-full object-cover" />
+            {/* 🌟 ঠিক করা হয়েছে: mutedclassName এর বদলে muted ব্যবহার করা হয়েছে */}
+            <video ref={myVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
           </div>
 
           <div className="absolute bottom-4 flex items-center gap-4 bg-background/80 backdrop-blur px-6 py-3 rounded-full border">

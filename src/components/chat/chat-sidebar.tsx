@@ -6,8 +6,7 @@ import { useOnlineUsers } from "@/hooks/use-online-users";
 import { Conversation } from "@/types";
 import { formatTime } from "@/lib/utils";
 import { Users } from "lucide-react";
-// 🌟 আপনার প্রজেক্টের সকেট বা এপিআই হুক ইমপোর্ট করে নিন (যদি থাকে)
-// import { useSocket } from "@/hooks/use-socket"; 
+import { socket } from "@/lib/socket";
 
 interface ChatSidebarProps {
   conversations: Conversation[];
@@ -24,27 +23,18 @@ export default function ChatSidebar({
 }: ChatSidebarProps) {
   const onlineUsers = useOnlineUsers();
   const safeConversations = Array.isArray(conversations) ? conversations : [];
-  
-  // 🌟 সকেট থাকলে সেটি কল করুন
-  // const { socket } = useSocket();
 
-  // 🌟 নতুন ফাংশন: চ্যাটে ক্লিক করলে যা ঘটবে
+  // 🌟 ফিক্সড ফাংশন: চ্যাটে ক্লিক করলে সিলেক্ট হবে এবং সকেটের মাধ্যমে মার্ক এজ রিড হবে
   const handleConversationClick = async (convId: string, unreadCount: number) => {
     // ১. প্রথমে চ্যাট সিলেক্ট করে UI আপডেট করুন
     onSelectConversation(convId);
 
-    // ২. যদি আনরিড মেসেজ থাকে, তবেই ব্যাকএন্ডে রিকোয়েস্ট পাঠান
-    if (unreadCount > 0) {
+    // ২. যদি আনরিড মেসেজ থাকে, তবে সকেট ইভেন্ট পাঠান
+    if (socket && socket.connected && unreadCount > 0) {
       try {
-        // অপশন ১: API কল করে seen করা (আপনার API রাউট অনুযায়ী পরিবর্তন করুন)
-        // await fetch(`/api/conversations/${convId}/seen`, { method: "POST" });
-        
-        // অপশন ২: সকেট ইভেন্ট দিয়ে seen করা
-        // if (socket) {
-        //   socket.emit("mark_seen", { conversationId: convId });
-        // }
+        socket.emit("mark_conversation_as_read", { conversationId: convId });
       } catch (error) {
-        console.error("Failed to mark as seen", error);
+        console.error("Failed to mark as read via socket", error);
       }
     }
   };
@@ -71,12 +61,12 @@ export default function ChatSidebar({
 
             const lastMsgObj = conv.messages?.[0];
             let lastMessageText = "No messages yet";
-            
+
             if (lastMsgObj) {
               const isMyMessage = lastMsgObj.senderId === currentUserId;
               const senderName = isMyMessage ? "You" : lastMsgObj.sender?.name || "Someone";
               const isDeleted = !lastMsgObj.body && !lastMsgObj.image && !lastMsgObj.fileUrl;
-              
+
               if (isDeleted) {
                 lastMessageText = conv.isGroup
                   ? `${senderName} deleted a message`
@@ -92,7 +82,6 @@ export default function ChatSidebar({
             return (
               <button
                 key={conv.id}
-                // 🌟 এখানে নতুন ফাংশনটি বসানো হয়েছে
                 onClick={() => handleConversationClick(conv.id, unreadCount)}
                 className={`w-full text-left p-2.5 rounded-lg transition-all flex items-center gap-3 relative ${
                   activeId === conv.id
@@ -114,7 +103,7 @@ export default function ChatSidebar({
                       )}
                     </AvatarFallback>
                   </Avatar>
-                  
+
                   {isOnline && (
                     <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-green-500 ring-2 ring-background" />
                   )}
@@ -132,7 +121,7 @@ export default function ChatSidebar({
                       </span>
                     )}
                   </div>
-                  
+
                   <div className="flex justify-between items-center gap-1">
                     <p
                       className={`text-xs truncate ${
@@ -144,7 +133,7 @@ export default function ChatSidebar({
                       {lastMessageText}
                     </p>
 
-                    {/* মেসেঞ্জারের মতো আনরেড কাউন্ট ব্যাজ */}
+                    {/* আনরেড কাউন্ট ব্যাজ */}
                     {unreadCount > 0 && (
                       <span className="bg-primary text-primary-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 min-w-[18px] text-center">
                         {unreadCount}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import ChatSidebar from "@/components/chat/chat-sidebar";
 import ChatBox from "@/components/chat/chat-box";
 import NewChatModal from "@/components/chat/new-chat-modal";
@@ -29,6 +29,13 @@ export const ChatLayout = ({
   currentUserName: propUserName,
 }: ChatLayoutProps) => {
   const router = useRouter();
+  
+  // 🌟 ১. হাইড্রেশন মিসম্যাচ এড়ানোর জন্য মাউন্টেড স্টেট যোগ করা হলো
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const { data: session } = authClient.useSession();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const clearUser = useAuthStore((state) => state.clearUser);
@@ -45,7 +52,6 @@ export const ChatLayout = ({
   const { data: conversations = [], isLoading } = useGetConversations();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
 
-  // ইনকামিং কল ম্যানেজ করার স্টেট
   const [incomingCall, setIncomingCall] = useState<{
     from: string;
     name: string;
@@ -59,21 +65,15 @@ export const ChatLayout = ({
     (c: Conversation) => c.id === activeConversationId
   );
 
-  // 🌟 গ্লোবাল সকেট হুক ইন্টিগ্রেশন (সঠিক প্যারামিটার অর্ডারসহ)
   const { socket } = useSocket(
     activeConversationId || undefined,
     currentUserId,
-    // ১. onCallOffer (ইনকামিং কল আসলে)
     (offerData) => setIncomingCall(offerData),
-    // ২. onCallAnswer
     undefined,
-    // ৩. onIceCandidate
     undefined,
-    // ৪. onEndCall (কলার কল কেটে দিলে পপ-আপ রিমুভ করতে)
     () => setIncomingCall(null)
   );
 
-  // চ্যাট সিলেক্ট করার সময় ইনস্ট্যান্ট unreadCount জিরো করার এবং সকেট ইভেন্ট পাঠানোর হ্যান্ডলার
   const handleSelectConversation = (id: string) => {
     setSelectedConversationId(id);
 
@@ -91,7 +91,6 @@ export const ChatLayout = ({
     queryClient.invalidateQueries({ queryKey: ["conversations"] });
   };
 
-  // ইনকামিং কল গ্রহণ করা
   const handleAcceptCall = async () => {
     if (!incomingCall) return;
     try {
@@ -106,7 +105,6 @@ export const ChatLayout = ({
     }
   };
 
-  // ইনকামিং কল কেটে দেওয়া বা রিজেক্ট করা
   const handleRejectCall = () => {
     if (incomingCall) {
       socket.emit("end_call", { targetUserId: incomingCall.from });
@@ -145,10 +143,14 @@ export const ChatLayout = ({
     return Array.from(userMap.values());
   }, [conversations, currentUserId]);
 
+  // 🌟 ২. কম্পোনেন্ট ব্রাউজারে ফুল মাউন্ট হওয়ার আগে এম্পটি রিটার্ন করা (হাইড্রেশন ফিক্স)
+  if (!isMounted) {
+    return null;
+  }
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background relative">
       
-      {/* ইনকামিং কল পপআপ মোডাল */}
       {incomingCall && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
           <div className="bg-card border p-6 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 text-center gap-4">
@@ -190,7 +192,6 @@ export const ChatLayout = ({
           isSidebarOpen ? "w-full md:w-80 flex" : "hidden"
         } ${activeConversationId ? "max-md:hidden" : "max-md:flex"}`}
       >
-        {/* User Info Header & Logout / Hide Sidebar Button */}
         <div className="p-3 border-b flex items-center justify-between bg-muted/30">
           <div className="flex items-center gap-2.5 min-w-0">
             <Avatar className="h-9 w-9 border">
@@ -210,19 +211,16 @@ export const ChatLayout = ({
           </div>
 
           <div className="flex items-center gap-0.5">
-            {/* Settings Modal Button */}
             <Dialog>
               <DialogTrigger asChild>
-                <span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
-                    title="Settings"
-                  >
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
+                  title="Settings"
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
               </DialogTrigger>
               <DialogContent className="max-w-sm">
                 <DialogHeader>
@@ -238,7 +236,6 @@ export const ChatLayout = ({
               </DialogContent>
             </Dialog>
 
-            {/* Logout Button */}
             <Button
               variant="ghost"
               size="icon"
@@ -254,7 +251,6 @@ export const ChatLayout = ({
               )}
             </Button>
 
-            {/* Hide Sidebar Button */}
             <Button
               variant="ghost"
               size="icon"
@@ -267,7 +263,6 @@ export const ChatLayout = ({
           </div>
         </div>
 
-        {/* Chats Header + Actions */}
         <div className="p-3 border-b flex justify-between items-center bg-background">
           <h2 className="font-bold text-base">Chats</h2>
           <div className="flex items-center gap-1">
@@ -282,7 +277,6 @@ export const ChatLayout = ({
           </div>
         </div>
 
-        {/* Sidebar List */}
         <div className="flex-1 overflow-hidden">
           {isLoading ? (
             <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
@@ -294,6 +288,7 @@ export const ChatLayout = ({
               activeId={activeConversationId}
               currentUserId={currentUserId}
               onSelectConversation={handleSelectConversation}
+              onlineUsers={onlineUsers}
             />
           )}
         </div>
@@ -305,7 +300,6 @@ export const ChatLayout = ({
           activeConversationId ? "flex" : "hidden md:flex"
         }`}
       >
-        {/* Show Sidebar Button */}
         {!isSidebarOpen && (
           <div className="hidden md:flex items-center absolute top-2.5 left-3 z-30">
             <Button
@@ -322,7 +316,6 @@ export const ChatLayout = ({
 
         {activeConversationId ? (
           <div className="flex-1 flex flex-col h-full relative">
-            {/* Mobile Back Button */}
             <div className="md:hidden absolute top-3 left-3 z-20">
               <button
                 onClick={() => setSelectedConversationId(null)}
@@ -333,7 +326,6 @@ export const ChatLayout = ({
               </button>
             </div>
 
-            {/* ChatBox Component */}
             <div className="flex-1 h-full flex flex-col pt-0 overflow-hidden">
               <ChatBox
                 key={activeConversationId}

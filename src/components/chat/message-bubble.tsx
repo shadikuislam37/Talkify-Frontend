@@ -48,7 +48,7 @@ export function MessageBubble({
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
 
 
-  const isEdited = msg.updatedAt && msg.createdAt && new Date(msg.updatedAt).getTime() !== new Date(msg.createdAt).getTime();
+ const isEdited = msg.updatedAt && msg.createdAt && (new Date(msg.updatedAt).getTime() - new Date(msg.createdAt).getTime() > 3000);
 
   const isReadByOther = React.useMemo(() => {
     if (!isMe) return false;
@@ -182,11 +182,11 @@ export function MessageBubble({
                         }}
                         className="text-left px-3 py-1.5 text-xs hover:bg-muted text-red-500 transition-colors cursor-pointer font-medium"
                       >
-                        Delete for Everyone
+                        Delete
                       </button>
                     )}
 
-                    {onDeleteForMe && (
+                    {/* {onDeleteForMe && (
                       <button
                         type="button"
                         onClick={() => {
@@ -197,7 +197,7 @@ export function MessageBubble({
                       >
                         Delete for Me
                       </button>
-                    )}
+                    )} */}
                   </div>
                 )}
               </div>

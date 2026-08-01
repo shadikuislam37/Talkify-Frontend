@@ -50,13 +50,13 @@ export const useSendMessage = () => {
         encryptedBody = body; 
       }
 
-      const response = await api.post(`/messages/${conversationId}`, {
-        conversationId,
-        body: encryptedBody,      // 🌟 এনক্রিপ্টেড সাইফারটেক্সট
-        encryptedKey,            // 🌟 এনক্রিপ্টেড AES Key
-        image,
-        replyToId,
-      });
+     const response = await api.post(`/messages/${conversationId}`, {
+  conversationId,
+  encryptedBody: encryptedBody,  // 🌟 'body' এর পরিবর্তে 'encryptedBody' দিন
+  encryptedKey: encryptedKey,    
+  image,
+  replyToId,
+});
       return response.data;
     },
     onSuccess: (_, variables) => {
@@ -108,7 +108,7 @@ export const useDeleteMessageForMe = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (messageId: string) => {
-      const res = await api.post(`/messages/${messageId}/delete-for-me`);
+      const res = await api.delete(`/messages/${messageId}/delete-for-me`);
       return res;
     },
     onSuccess: () => {
