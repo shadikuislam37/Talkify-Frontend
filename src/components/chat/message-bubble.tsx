@@ -47,6 +47,9 @@ export function MessageBubble({
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
 
+
+  const isEdited = msg.updatedAt && msg.createdAt && new Date(msg.updatedAt).getTime() !== new Date(msg.createdAt).getTime();
+
   const isReadByOther = React.useMemo(() => {
     if (!isMe) return false;
     if (msg.reads && Array.isArray(msg.reads) && msg.reads.length > 0) {
@@ -306,9 +309,9 @@ export function MessageBubble({
                 isMe ? "text-primary-foreground/80" : "text-muted-foreground"
               }`}
             >
-              {msg.isEdited && !isDeleted && (
-                <span className="italic opacity-70 mr-1 select-none">(edited)</span>
-              )}
+            {isEdited && !isDeleted && (
+  <span className="italic opacity-70 mr-1 select-none">(edited)</span>
+)}
 
               <span>{formatTime(msg.createdAt)}</span>
 

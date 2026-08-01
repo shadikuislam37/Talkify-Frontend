@@ -1,231 +1,218 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, Paperclip, X, FileText, Film, Music } from "lucide-react";
-import { useMessage } from "@/hooks/use-messages";
-import { useSocket } from "@/hooks/use-socket";
-import { SendMessageInput, sendMessageSchema } from "@/schemas/chat.schema";
+import { Loader2, Send, X, FileText, Film, Music } from "lucide-react";
+import { sendMessageSchema } from "@/schemas/chat.schema";
 import Image from "next/image";
-import { useChatStore } from "@/store/use-chat-store";
+import { Message } from "@/types";
+import MediaUploadButton from "./MediaUploadButton";
 
-export const MessageInput = () => {
-  const { activeConversationId } = useChatStore();
-  const { socket } = useSocket(activeConversationId || undefined);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+interface MessageInputProps {
+  conversationId: string;
+  currentUserId?: string;
+  socket: any;
+  replyingTo: Message | null;
+  onCancelReply: () => void;
+  onSendMessage: (payload: any) => Promise<any>;
+  isSending: boolean;
+  onTyping: (text: string) => void;
+}
 
-  const [isUploading, setIsUploading] = useState(false);
+export const MessageInput = ({
+  conversationId,
+  currentUserId,
+  socket,
+  replyingTo,
+  onCancelReply,
+  onSendMessage,
+  isSending,
+  onTyping,
+}: MessageInputProps) => {
   const [mediaPreview, setMediaPreview] = useState<{
     url: string;
     type: string;
     name: string;
   } | null>(null);
 
-  const { mutateAsync: sendMessage, isPending } = useMessage.useSendMessage();
-
   const form = useForm({
     defaultValues: {
       body: "",
-      image: "",
-      conversationId: activeConversationId || "",
-    } as SendMessageInput,
+      fileUrl: "",
+      fileType: "",
+      fileName: "",
+      conversationId: conversationId,
+    } as any,
     validators: { onChange: sendMessageSchema },
     onSubmit: async ({ value }) => {
-      if (!activeConversationId || (!value.body?.trim() && !value.image?.trim())) return;
+      const activeId = conversationId || value.conversationId;
+      // 🌟 এখানে body অথবা mediaPreview.url যেকোনো একটা থাকলেই যেন সাবমিট এলাও হয়
+      if (!activeId || (!value.body?.trim() && !mediaPreview?.url)) return;
 
       try {
-        if (socket) socket.emit("typing_stop", { conversationId: activeConversationId });
+        if (socket) socket.emit("typing_stop", { conversationId: activeId, userId: currentUserId });
 
         const payload = {
-          conversationId: activeConversationId,
+          conversationId: activeId,
           body: value.body?.trim() ? value.body.trim() : undefined,
-          image: value.image?.trim() ? value.image.trim() : undefined,
+          fileUrl: mediaPreview?.url || undefined,
+          fileType: mediaPreview?.type || undefined,
+          fileName: mediaPreview?.name || undefined,
+          replyToId: replyingTo?.id || undefined,
         };
 
-        const newMsg = await sendMessage(payload);
+        form.reset({ body: "", fileUrl: "", fileType: "", fileName: "", conversationId: activeId });
+        setMediaPreview(null);
+        onCancelReply();
+
+        const newMsg = await onSendMessage(payload);
 
         if (socket && newMsg) {
-          socket.emit("send_message", {
-            conversationId: activeConversationId,
-            message: newMsg,
-          });
+          socket.emit("send_message", { conversationId: activeId, message: newMsg });
         }
-
-        form.reset();
-        setMediaPreview(null);
       } catch (error) {
         console.error("Failed to send message:", error);
       }
     },
   });
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/media/upload`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      if (data.success) {
-        form.setFieldValue("image", data.data.fileUrl);
-        setMediaPreview({
-          url: data.data.fileUrl,
-          type: file.type,
-          name: file.name,
-        });
-      } else {
-        alert(data.message || "File upload failed!");
-      }
-    } catch (error) {
-      console.error("Upload error:", error);
-      alert("Something went wrong while uploading!");
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+  const handleUploadComplete = (fileData: { url: string; name: string; type: string }) => {
+    form.setFieldValue("fileUrl", fileData.url);
+    form.setFieldValue("fileType", fileData.type);
+    form.setFieldValue("fileName", fileData.name);
+    
+    setMediaPreview({
+      url: fileData.url,
+      type: fileData.type,
+      name: fileData.name,
+    });
   };
 
   const handleRemoveMedia = () => {
-    form.setFieldValue("image", "");
+    form.setFieldValue("fileUrl", "");
+    form.setFieldValue("fileType", "");
+    form.setFieldValue("fileName", "");
     setMediaPreview(null);
   };
 
-  const handleInputChange = (text: string) => {
-    if (!socket || !activeConversationId) return;
-
-    if (text.trim().length > 0) {
-      socket.emit("typing_start", { conversationId: activeConversationId });
-
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = setTimeout(() => {
-        socket.emit("typing_stop", { conversationId: activeConversationId });
-      }, 2000);
-    } else {
-      socket.emit("typing_stop", { conversationId: activeConversationId });
-    }
-  };
-
-  if (!activeConversationId) return null;
-
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        form.handleSubmit();
-      }}
-      className="p-4 border-t flex flex-col gap-2 bg-background"
-    >
-      {/* 🌟 ফাইল প্রিভিউ অংশ */}
-      {mediaPreview && (
-        <div className="relative w-fit flex items-center gap-2 p-2 bg-muted rounded-md border">
-          {mediaPreview.type.startsWith("image/") ? (
-            <div className="relative w-16 h-16 rounded overflow-hidden">
-              <Image
-                src={mediaPreview.url}
-                alt="upload preview"
-                fill
-                className="object-cover"
-                unoptimized
-              />
-            </div>
-          ) : mediaPreview.type.startsWith("video/") ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground p-2">
-              <Film className="h-5 w-5 text-primary" />
-              <span className="max-w-[150px] truncate">{mediaPreview.name}</span>
-            </div>
-          ) : mediaPreview.type.startsWith("audio/") ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground p-2">
-              <Music className="h-5 w-5 text-primary" />
-              <span className="max-w-[150px] truncate">{mediaPreview.name}</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground p-2">
-              <FileText className="h-5 w-5 text-primary" />
-              <span className="max-w-[150px] truncate">{mediaPreview.name}</span>
-            </div>
-          )}
-
+    <div className="flex flex-col border-t bg-background shrink-0 mt-auto">
+      {/* Reply Preview Bar */}
+      {replyingTo && (
+        <div className="flex items-center justify-between p-2 bg-muted/80 border-b text-xs">
+          <div className="truncate pr-2">
+            <span className="font-bold text-primary block">
+              Replying to {replyingTo.senderId === currentUserId ? "yourself" : replyingTo.sender?.name || "user"}
+            </span>
+            <span className="text-muted-foreground truncate block">{replyingTo.body || "Attachment"}</span>
+          </div>
           <Button
             type="button"
-            variant="destructive"
+            variant="ghost"
             size="icon"
-            className="h-6 w-6 rounded-full absolute -top-2 -right-2"
-            onClick={handleRemoveMedia}
+            onClick={onCancelReply}
+            className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
           >
-            <X className="h-3 w-3" />
+            <X className="h-3.5 w-3.5" />
           </Button>
         </div>
       )}
 
-      <div className="flex gap-2 items-center">
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          className="hidden"
-          accept="image/*,application/pdf,video/*,audio/*"
-        />
+      {/* Media Preview Box */}
+      {/* Media Preview Box */}
+      {mediaPreview && mediaPreview.url && (
+        <div className="p-2 border-b bg-muted/40">
+          <div className="relative w-fit flex items-center gap-2 p-2 bg-background rounded-md border shadow-sm">
+            {mediaPreview.type.startsWith("image/") ? (
+              <div className="relative w-14 h-14 rounded overflow-hidden bg-muted">
+                <Image 
+                  src={mediaPreview.url} 
+                  alt="preview" 
+                  fill 
+                  className="object-cover" 
+                  unoptimized 
+                />
+              </div>
+            ) : mediaPreview.type.startsWith("video/") ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground p-1">
+                <Film className="h-4 w-4 text-primary" />
+                <span className="max-w-[150px] truncate">{mediaPreview.name}</span>
+              </div>
+            ) : mediaPreview.type.startsWith("audio/") ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground p-1">
+                <Music className="h-4 w-4 text-primary" />
+                <span className="max-w-[150px] truncate">{mediaPreview.name}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground p-1">
+                <FileText className="h-4 w-4 text-primary" />
+                <span className="max-w-[150px] truncate">{mediaPreview.name}</span>
+              </div>
+            )}
 
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          disabled={isPending || isUploading}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          {isUploading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Paperclip className="h-4 w-4" />
-          )}
-        </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="icon"
+              className="h-5 w-5 rounded-full absolute -top-2 -right-2 shadow"
+              onClick={handleRemoveMedia}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Input Form */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          form.handleSubmit();
+        }}
+        className="flex gap-2 items-center p-4"
+      >
+        <MediaUploadButton onUploadComplete={handleUploadComplete} />
 
         <form.Field name="body">
           {(field) => (
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1">
               <Input
                 name={field.name}
                 value={field.state.value || ""}
                 onChange={(e) => {
                   field.handleChange(e.target.value);
-                  handleInputChange(e.target.value);
+                  onTyping(e.target.value);
                 }}
                 onBlur={field.handleBlur}
                 placeholder="Type a message..."
                 autoComplete="off"
-                disabled={isPending || isUploading}
+                disabled={isSending}
+                className="h-10"
               />
-              {field.state.meta.errors.length > 0 && (
-                <span className="text-xs text-destructive mt-1">
-                  {field.state.meta.errors.map((err) => (typeof err === "string" ? err : err?.message)).join(", ")}
-                </span>
-              )}
             </div>
           )}
         </form.Field>
 
-        <Button type="submit" disabled={isPending || isUploading} size="icon">
-          {isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4" />
+        {/* 🌟 সেন্ড বাটনে মিডিয়া প্রিভিউ বা বডি যেকোনো একটি থাকলেই যেন এটি সচল হয় */}
+        <form.Subscribe
+          selector={(state) => [state.values.body, mediaPreview]}
+        >
+          {([body, preview]) => (
+            <Button
+              type="submit"
+              disabled={isSending || (!body?.trim() && !preview)}
+              size="icon"
+              className="h-10 w-10 shrink-0"
+            >
+              {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
           )}
-        </Button>
-      </div>
-    </form>
+        </form.Subscribe>
+      </form>
+    </div>
   );
 };
 

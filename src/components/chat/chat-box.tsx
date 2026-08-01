@@ -1,13 +1,11 @@
 "use client";
+
 import { useReactionStore } from "@/store/use-reaction-store";
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import Image from "next/image";
-import { useForm } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocket } from "@/hooks/use-socket";
 import { useMessage } from "@/hooks/use-messages";
-import { Loader2, Send, Paperclip, X, Info, Video, Check } from "lucide-react";
-import { sendMessageSchema, SendMessageInput } from "@/schemas/chat.schema";
+import { Loader2, Info, Video, Check, X } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +17,7 @@ import { useOnlineUsers } from "@/hooks/use-online-users";
 import { formatLastSeen } from "@/lib/utils";
 import { useEditMessage } from "@/hooks/use-message-edit-delete";
 import { api } from "@/lib/api";
-import { supabaseClient } from "@/lib/uploadSupabase";
+import { MessageInput } from "./message-input";
 
 interface ChatBoxProps {
   conversationId: string;
@@ -82,13 +80,7 @@ export default function ChatBox({
   const { mutateAsync: reactToMessage } = useMessage.useReactToMessage();
   const addOrUpdateReaction = useReactionStore((state) => state.addOrUpdateReaction);
 
-  const { mutateAsync: editMessage } = useEditMessage?.() || {
-    mutateAsync: async () => {},
-  };
-
   const [typingUsers, setTypingUsers] = useState<{ [userId: string]: string }>({});
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
 
@@ -108,9 +100,7 @@ export default function ChatBox({
     if (element) {
       element.scrollIntoView({ behavior: "smooth", block: "center" });
       setHighlightedMsgId(targetId);
-      setTimeout(() => {
-        setHighlightedMsgId(null);
-      }, 2000);
+      setTimeout(() => setHighlightedMsgId(null), 2000);
     }
   };
 
@@ -132,30 +122,21 @@ export default function ChatBox({
   }, [socket, conversationId]);
 
   useEffect(() => {
-    if (!socket.connected) {
-      socket.connect();
-    }
+    if (!socket.connected) socket.connect();
 
     const handleNewMessage = (newMessage: Message) => {
-      queryClient.setQueryData(
-        ["messages", conversationId],
-        (oldData: any) => {
-          if (!oldData) return oldData;
-          const newPages = [...oldData.pages];
-          if (newPages.length > 0) {
-            newPages[0] = [newMessage, ...newPages[0]];
-          }
-          return { ...oldData, pages: newPages };
-        }
-      );
+      queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
+        if (!oldData) return oldData;
+        const newPages = [...oldData.pages];
+        if (newPages.length > 0) newPages[0] = [newMessage, ...newPages[0]];
+        return { ...oldData, pages: newPages };
+      });
     };
 
     const handleStatusChange = (data: { messageId: string; userId?: string; readByUserId?: string; status: string }) => {
       const readerUserId = data.userId || data.readByUserId;
-
       queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
         if (!oldData) return oldData;
-
         return {
           ...oldData,
           pages: oldData.pages.map((page: Message[]) =>
@@ -165,16 +146,10 @@ export default function ChatBox({
                 const alreadyRead = readerUserId 
                   ? existingReads.some((r: any) => String(r.userId) === String(readerUserId))
                   : false;
-
                 const updatedReads = alreadyRead || !readerUserId
                   ? existingReads
                   : [...existingReads, { id: Math.random().toString(), messageId: msg.id, userId: readerUserId, readAt: new Date().toISOString() }];
-
-                return {
-                  ...msg,
-                  status: data.status as any,
-                  reads: updatedReads,
-                };
+                return { ...msg, status: data.status as any, reads: updatedReads };
               }
               return msg;
             })
@@ -187,7 +162,6 @@ export default function ChatBox({
       addOrUpdateReaction(data.messageId, data.reaction);
     };
 
-    // 🌟 রিয়েল-টাইম মেসেজ এডিট হ্যান্ডলার
     const handleMessageEdited = (updatedMessage: Message) => {
       queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
         if (!oldData) return oldData;
@@ -222,7 +196,6 @@ export default function ChatBox({
       const msgSenderId = m.senderId || m.sender?.id;
       const isMyMessage = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
       const alreadyReadByMe = m.reads?.some((r: any) => String(r.userId) === String(currentUserId));
-
       return !isMyMessage && m.status !== "READ" && !alreadyReadByMe;
     });
 
@@ -230,9 +203,7 @@ export default function ChatBox({
       incomingUnreadMessages.forEach(async (msg) => {
         try {
           await markAsRead({ messageId: msg.id, conversationId });
-        } catch (err) {
-          // Silent Fail
-        }
+        } catch (err) {}
 
         if (socket && socket.connected) {
           socket.emit("update_message_status", {
@@ -275,53 +246,12 @@ export default function ChatBox({
     }
   }, [messages.length, typingUsers]);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const fileName = `${Date.now()}-${file.name}`;
-      const { data, error } = await supabaseClient.storage
-        .from("chat-uploads")
-        .upload(fileName, file);
-
-      if (error) throw error;
-
-      const { data: publicUrlData } = supabaseClient.storage
-        .from("chat-uploads")
-        .getPublicUrl(fileName);
-
-      const fileUrl = publicUrlData.publicUrl;
-
-      const newMessage = {
-        body: "",
-        fileUrl: fileUrl,
-        fileName: file.name,
-        fileType: file.type,
-        conversationId: conversationId,
-        senderId: currentUserId,
-        createdAt: new Date(),
-      };
-
-      socket.emit("send_message", {
-        conversationId,
-        message: newMessage,
-      });
-
-    } catch (err) {
-      console.error("File upload error:", err);
-    }
-  };
-
   useEffect(() => {
     if (!socket) return;
 
     const handleTypingStart = (data: { conversationId: string; userId?: string; senderName?: string }) => {
       if (data.conversationId === conversationId && data.userId !== currentUserId) {
-        setTypingUsers((prev) => ({
-          ...prev,
-          [data.userId || "unknown"]: data.senderName || "Someone",
-        }));
+        setTypingUsers((prev) => ({ ...prev, [data.userId || "unknown"]: data.senderName || "Someone" }));
       }
     };
 
@@ -344,49 +274,6 @@ export default function ChatBox({
     };
   }, [socket, conversationId, currentUserId]);
 
-  const form = useForm({
-    defaultValues: {
-      body: "",
-      image: "",
-      conversationId: conversationId,
-    } as SendMessageInput,
-    validators: { onChange: sendMessageSchema },
-    onSubmit: async ({ value }) => {
-      const activeId = conversationId || value.conversationId;
-
-      if (!activeId || (!value.body?.trim() && !selectedImage)) return;
-
-      if (socket) socket.emit("typing_stop", { conversationId: activeId, userId: currentUserId });
-
-      const payload = {
-        conversationId: activeId,
-        body: value.body?.trim() ? value.body.trim() : undefined,
-        image: selectedImage || undefined,
-        replyToId: replyingTo?.id || undefined,
-      };
-
-      try {
-        const newMsg = await sendMessage(payload);
-
-        if (socket && newMsg) {
-          socket.emit("send_message", { conversationId: activeId, message: newMsg });
-        }
-
-        form.reset({ body: "", image: "", conversationId: activeId });
-        setSelectedImage(null);
-        setReplyingTo(null);
-      } catch (err) {
-        console.error("Failed to send message:", err);
-      }
-    },
-  });
-
-  useEffect(() => {
-    if (conversationId) {
-      form.setFieldValue("conversationId", conversationId);
-    }
-  }, [conversationId, form]);
-
   const handleInputChange = (text: string) => {
     if (!socket) return;
     if (text.trim().length > 0) {
@@ -404,14 +291,11 @@ export default function ChatBox({
     if (!editText.trim()) return;
     try {
       await api.patch(`/messages/edit/${messageId}`, { newBody: editText.trim() });
-
       if (socket && conversationId) {
         socket.emit("edit_message", { messageId, newBody: editText.trim(), conversationId });
       }
-
       setEditingMessageId(null);
       setEditText("");
-      
       queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
     } catch (err) {
       console.error("Failed to edit message:", err);
@@ -420,25 +304,20 @@ export default function ChatBox({
 
   const confirmDeleteMessage = async () => {
     if (!deletingMessageId) return;
-
     try {
       setIsDeleting(true);
       await deleteMessage(deletingMessageId);
-
       if (socket && conversation?.id) {
         socket.emit("delete_message_everyone", {
           messageId: deletingMessageId,
           conversationId: conversation.id,
         });
       }
-
       queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
         if (!oldData) return oldData;
         return {
           ...oldData,
-          pages: oldData.pages.map((page: Message[]) =>
-            page.filter((msg) => msg.id !== deletingMessageId)
-          ),
+          pages: oldData.pages.map((page: Message[]) => page.filter((msg) => msg.id !== deletingMessageId)),
         };
       });
     } catch (err) {
@@ -456,11 +335,7 @@ export default function ChatBox({
       {/* CHAT HEADER SECTION */}
       <div className="flex items-center justify-between border-b p-4 shrink-0">
         <div 
-          onClick={() => {
-            if (conversation?.isGroup) {
-              setIsGroupDetailsOpen(true);
-            }
-          }}
+          onClick={() => conversation?.isGroup && setIsGroupDetailsOpen(true)}
           className={`flex items-center gap-3 ${conversation?.isGroup ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
         >
           <div className="relative">
@@ -489,7 +364,6 @@ export default function ChatBox({
           </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="flex items-center gap-1">
           {!conversation?.isGroup && otherUser && (
             <Button
@@ -520,7 +394,7 @@ export default function ChatBox({
       </div>
 
       {/* MESSAGES LIST AREA */}
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col  min-h-0">
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col min-h-0">
         <div ref={observerTargetRef} className="h-2 w-full">
           {isFetchingNextPage && (
             <div className="flex justify-center py-2">
@@ -552,20 +426,15 @@ export default function ChatBox({
                     setEditingMessageId(id);
                     setEditText(currentText);
                   }}
-                  onDelete={(id) => {
-                    setDeletingMessageId(id);
-                  }}
+                  onDelete={(id) => setDeletingMessageId(id)}
                   onDeleteForMe={async (msgId) => {
                     try {
                       await api.post(`/messages/delete-for-me/${msgId}`);
-
                       queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
                         if (!oldData) return oldData;
                         return {
                           ...oldData,
-                          pages: oldData.pages.map((page: Message[]) =>
-                            page.filter((m) => m.id !== msgId)
-                          ),
+                          pages: oldData.pages.map((page: Message[]) => page.filter((m) => m.id !== msgId)),
                         };
                       });
                     } catch (err) {
@@ -589,7 +458,7 @@ export default function ChatBox({
                   onScrollToReply={scrollToMessage}
                 />
 
-                {editingMessageId === msg.id ? (
+                {editingMessageId === msg.id && (
                   <div className="flex items-center gap-2 mt-1 px-2">
                     <Input
                       value={editText}
@@ -613,7 +482,7 @@ export default function ChatBox({
                       <X className="h-3 w-3" />
                     </Button>
                   </div>
-                ) : null}
+                )}
               </div>
             ))}
           </div>
@@ -632,116 +501,31 @@ export default function ChatBox({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Reply Preview Above Input */}
-      {replyingTo && (
-        <div className="flex items-center justify-between p-2 bg-muted/80 border-t text-xs shrink-0">
-          <div className="truncate pr-2">
-            <span className="font-bold text-primary block">
-              Replying to {replyingTo.senderId === currentUserId ? "yourself" : replyingTo.sender?.name || "user"}
-            </span>
-            <span className="text-muted-foreground truncate block">{replyingTo.body || "Image"}</span>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setReplyingTo(null)}
-            className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      )}
-
-      {/* Selected Image Preview */}
-      {selectedImage && (
-        <div className="relative w-16 h-16 m-2 border rounded-md overflow-hidden bg-muted shrink-0">
-          <Image
-            src={selectedImage}
-            alt="Preview of uploaded image"
-            fill
-            sizes="64px"
-            className="object-cover"
-            unoptimized
-          />
-          <button
-            type="button"
-            onClick={() => setSelectedImage(null)}
-            className="absolute top-0 right-0 z-10 bg-black/60 text-white p-0.5 rounded-bl hover:bg-black/80 transition-colors"
-            title="Remove image"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      )}
-
-      {/* Input Form with TanStack Form */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          form.handleSubmit();
-        }}
-        className="flex gap-2 items-center p-4 border-t shrink-0 bg-background"
-      >
-        <label className="cursor-pointer p-2 hover:bg-muted rounded-md text-muted-foreground transition-colors flex items-center justify-center">
-          {isUploading ? (
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          ) : (
-            <Paperclip className="h-4 w-4" />
-          )}
-          <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={isUploading} />
-        </label>
-
-        <form.Field name="body">
-          {(field) => (
-            <div className="flex-1">
-              <Input
-                name={field.name}
-                value={field.state.value || ""}
-                onChange={(e) => {
-                  field.handleChange(e.target.value);
-                  handleInputChange(e.target.value);
-                }}
-                onBlur={field.handleBlur}
-                placeholder="Type a message..."
-                autoComplete="off"
-                className="h-10"
-              />
-            </div>
-          )}
-        </form.Field>
-
-        <Button type="submit" disabled={isSending || isUploading} size="icon" className="h-10 w-10">
-          {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </Button>
-      </form>
+      {/* 🌟 MESSAGE INPUT COMPONENT INTEGRATION */}
+      <MessageInput
+        conversationId={conversationId}
+        currentUserId={currentUserId}
+        socket={socket}
+        replyingTo={replyingTo}
+        onCancelReply={() => setReplyingTo(null)}
+        onSendMessage={async (payload) => await sendMessage(payload)}
+        isSending={isSending}
+        onTyping={handleInputChange}
+      />
 
       {/* Delete Confirmation Modal */}
       {deletingMessageId && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-background border rounded-lg p-6 max-w-sm w-full shadow-lg space-y-4 animate-in fade-in zoom-in duration-150">
-            <h3 className="text-lg font-semibold text-foreground">
-              Delete Message?
-            </h3>
+          <div className="bg-background border rounded-lg p-6 max-w-sm w-full shadow-lg space-y-4">
+            <h3 className="text-lg font-semibold text-foreground">Delete Message?</h3>
             <p className="text-sm text-muted-foreground">
               Are you sure you want to delete this message? This action cannot be undone.
             </p>
             <div className="flex justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isDeleting}
-                onClick={() => setDeletingMessageId(null)}
-              >
+              <Button type="button" variant="outline" disabled={isDeleting} onClick={() => setDeletingMessageId(null)}>
                 Cancel
               </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={isDeleting}
-                onClick={confirmDeleteMessage}
-              >
+              <Button type="button" variant="destructive" disabled={isDeleting} onClick={confirmDeleteMessage}>
                 {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
               </Button>
             </div>
@@ -749,7 +533,7 @@ export default function ChatBox({
         </div>
       )}
 
-      {/* GROUP DETAILS MODAL INTEGRATION */}
+      {/* GROUP DETAILS MODAL */}
       {conversation?.isGroup && (
         <GroupDetailsModal
           open={isGroupDetailsOpen}

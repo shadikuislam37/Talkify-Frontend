@@ -8,7 +8,7 @@ export const useUploadMedia = () => {
       formData.append("file", file);
 
       // ব্যাকএন্ডে ফাইল আপলোড রাউট (যা ক্লাউড স্টোরেজে পাঠিয়ে URL রিটার্ন করবে)
-      const res = await api.post("/upload", formData, {
+      const res = await api.post("/media/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       return res.data.url; // আপলোড করা ফাইলের URL

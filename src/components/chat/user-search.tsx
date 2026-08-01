@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useMessage } from "@/hooks/use-messages";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, Loader2, X } from "lucide-react";
@@ -18,7 +17,7 @@ interface UserSearchProps {
 export function UserSearch({
   onSelectUser,
   isLoadingAction = false,
-  placeholder = "Search user by name or email...",
+  placeholder = "Search user by name...", // 🌟 ইমেল রিমুভ করে নাম করা হলো
   excludeUserIds = [],
 }: UserSearchProps) {
   const [query, setQuery] = useState("");
@@ -87,9 +86,7 @@ export function UserSearch({
               </Avatar>
               <div className="flex-1 overflow-hidden">
                 <p className="font-medium text-sm truncate">{user.name}</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {user.email}
-                </p>
+                {/* 🌟 প্রাইভেসির জন্য user.email রিমুভ করে দেওয়া হলো। চাইলে এখানে অন্য কিছু বা ইউজার স্ট্যাটাস দিতে পারেন */}
               </div>
               {isLoadingAction && (
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />

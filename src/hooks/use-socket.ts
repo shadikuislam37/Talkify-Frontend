@@ -58,17 +58,24 @@ export function useSocket(
         }
       }
 
-      queryClient.setQueryData(["messages", newMessage.conversationId], (oldData: any) => {
-        if (!oldData) return oldData;
-        const newPages = [...oldData.pages];
-        if (newPages.length > 0) {
-          const exists = newPages[0].some((m: Message) => m.id === newMessage.id);
-          if (!exists) {
-            newPages[0] = [newMessage, ...newPages[0]];
-          }
-        }
-        return { ...oldData, pages: newPages };
-      });
+   queryClient.setQueryData(["messages", newMessage.conversationId], (oldData: any) => {
+  // 🌟 যদি আগে কোনো মেসেজ না থাকে (Empty Chat), তবে নতুন অ্যারে তৈরি করে দিন
+  if (!oldData || !oldData.pages || oldData.pages.length === 0) {
+    return {
+      pages: [[newMessage]],
+      pageParams: [null],
+    };
+  }
+
+  const newPages = [...oldData.pages];
+  if (newPages.length > 0) {
+    const exists = newPages[0].some((m: Message) => m.id === newMessage.id);
+    if (!exists) {
+      newPages[0] = [newMessage, ...newPages[0]];
+    }
+  }
+  return { ...oldData, pages: newPages };
+});
 
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     };
@@ -174,6 +181,7 @@ export function useSocket(
     const handleMessageStatusChange = (data: any) => {
       if (onMessageStatusChange) onMessageStatusChange(data);
       queryClient.invalidateQueries({ queryKey: ["messages", data.conversationId] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
     };
 
     const handleGroupUpdated = (data: any) => {

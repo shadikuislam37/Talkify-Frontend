@@ -54,7 +54,6 @@ export default function UserSearchBox() {
               </Avatar>
               <div>
                 <p className="text-sm font-medium">{user.name}</p>
-                <p className="text-xs text-muted-foreground">{user.email}</p>
               </div>
             </div>
 

@@ -90,6 +90,11 @@ export interface Message {
 
   conversationId?: string;
 
+  //file upload feature : 
+  fileUrl?: string | null;
+  fileName?: string | null;
+  fileType?: string | null;
+
   // Reply Feature
   replyToId?: string | null;
   replyTo?: {
@@ -106,6 +111,7 @@ export interface Message {
   // Reactions & Read Receipts
   reactions?: Reaction[];
   reads?: MessageRead[];
+  isEdited?: boolean;
 }
 
 // ==========================================

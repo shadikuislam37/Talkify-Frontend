@@ -53,10 +53,9 @@ export const ChatLayout = ({
     isVideo?: boolean;
   } | null>(null);
 
-  const activeConversationId =
-    selectedConversationId === ""
-      ? ""
-      : selectedConversationId ?? (conversations.length > 0 ? conversations[0].id : "");
+
+  const activeConversationId = selectedConversationId;
+
 
   const activeConversation = conversations.find(
     (c: Conversation) => c.id === activeConversationId
@@ -317,7 +316,7 @@ export const ChatLayout = ({
             {/* Mobile Back Button */}
             <div className="md:hidden absolute top-3 left-3 z-20">
               <button
-                onClick={() => setSelectedConversationId("")}
+                onClick={() => setSelectedConversationId(null)}
                 className="p-1.5 rounded-full hover:bg-muted text-muted-foreground"
                 title="Back to chats"
               >

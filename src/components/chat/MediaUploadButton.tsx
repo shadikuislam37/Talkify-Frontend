@@ -1,11 +1,12 @@
 "use client";
-import React, { useRef } from "react";
+import React  from "react";
 import { useUploadMedia } from "@/hooks/use-media-upload";
 import { Button } from "@/components/ui/button";
-import { Image as ImageIcon, Loader2 } from "lucide-react";
+import { Paperclip, Loader2 } from "lucide-react"; // ImageIcon এর বদলে Paperclip দেওয়া ভালো
+import { useRef } from "react";
 
 interface MediaUploadProps {
-  onUploadComplete: (url: string) => void;
+  onUploadComplete: (fileData: { url: string; name: string; type: string }) => void;
 }
 
 export default function MediaUploadButton({ onUploadComplete }: MediaUploadProps) {
@@ -18,8 +19,17 @@ export default function MediaUploadButton({ onUploadComplete }: MediaUploadProps
 
     uploadFile(file, {
       onSuccess: (url) => {
-        onUploadComplete(url);
+        // ফাইলের URL-এর সাথে নাম এবং টাইপও পাস করে দিচ্ছি
+        onUploadComplete({
+          url,
+          name: file.name,
+          type: file.type,
+        });
       },
+      onError: (err) => {
+        console.error("Upload failed:", err);
+        alert("File upload failed!");
+      }
     });
   };
 
@@ -29,7 +39,7 @@ export default function MediaUploadButton({ onUploadComplete }: MediaUploadProps
         type="file"
         ref={fileInputRef}
         onChange={handleFileChange}
-        accept="image/*,application/pdf"
+        // accept বাদ দেওয়া হয়েছে যাতে PDF, MP4, MKV, Image সব ধরনের ফাইল সাপোর্ট করে
         className="hidden"
       />
       <Button
@@ -38,10 +48,11 @@ export default function MediaUploadButton({ onUploadComplete }: MediaUploadProps
         variant="ghost"
         disabled={isPending}
         onClick={() => fileInputRef.current?.click()}
-        title="Upload Image or File"
+        title="Upload File"
       >
-        {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
+        {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
       </Button>
     </>
   );
 }
+  
