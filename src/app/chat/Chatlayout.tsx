@@ -53,25 +53,27 @@ export const ChatLayout = ({
     isVideo?: boolean;
   } | null>(null);
 
-
   const activeConversationId = selectedConversationId;
-
 
   const activeConversation = conversations.find(
     (c: Conversation) => c.id === activeConversationId
   );
 
-  // গ্লোবাল সোকেট হুক ইন্টিগ্রেশন
+  // 🌟 গ্লোবাল সকেট হুক ইন্টিগ্রেশন (সঠিক প্যারামিটার অর্ডারসহ)
   const { socket } = useSocket(
     activeConversationId || undefined,
     currentUserId,
+    // ১. onCallOffer (ইনকামিং কল আসলে)
     (offerData) => setIncomingCall(offerData),
+    // ২. onCallAnswer
     undefined,
+    // ৩. onIceCandidate
     undefined,
+    // ৪. onEndCall (কলার কল কেটে দিলে পপ-আপ রিমুভ করতে)
     () => setIncomingCall(null)
   );
 
-  // 🌟 চ্যাট সিলেক্ট করার সময় ইনস্ট্যান্ট unreadCount জিরো করার এবং সোকেট ইভেন্ট পাঠানোর হ্যান্ডলার
+  // চ্যাট সিলেক্ট করার সময় ইনস্ট্যান্ট unreadCount জিরো করার এবং সকেট ইভেন্ট পাঠানোর হ্যান্ডলার
   const handleSelectConversation = (id: string) => {
     setSelectedConversationId(id);
 
@@ -89,15 +91,22 @@ export const ChatLayout = ({
     queryClient.invalidateQueries({ queryKey: ["conversations"] });
   };
 
-  const handleAcceptCall = () => {
+  // ইনকামিং কল গ্রহণ করা
+  const handleAcceptCall = async () => {
     if (!incomingCall) return;
-    socket.emit("call_answer", {
-      targetUserId: incomingCall.from,
-      sdp: {}
-    });
-    setIncomingCall(null);
+    try {
+      socket.emit("call_answer", {
+        targetUserId: incomingCall.from,
+        sdp: incomingCall.sdp,
+      });
+    } catch (error) {
+      console.error("Error accepting call:", error);
+    } finally {
+      setIncomingCall(null);
+    }
   };
 
+  // ইনকামিং কল কেটে দেওয়া বা রিজেক্ট করা
   const handleRejectCall = () => {
     if (incomingCall) {
       socket.emit("end_call", { targetUserId: incomingCall.from });

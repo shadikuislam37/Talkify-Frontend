@@ -80,6 +80,7 @@ export interface MessageRead {
 export interface Message {
   id: string;
   body?: string | null;
+  encryptedKey?: string | null;
   image?: string | null;
   status?: MessageStatus;
   createdAt?: string | Date;
@@ -87,6 +88,9 @@ export interface Message {
 
   senderId?: string;
   sender?: AuthUser;
+
+  
+
 
   conversationId?: string;
 

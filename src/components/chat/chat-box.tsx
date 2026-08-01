@@ -15,9 +15,9 @@ import MessageBubble from "./message-bubble";
 import { useCallStore } from "@/store/use-call-store";
 import { useOnlineUsers } from "@/hooks/use-online-users";
 import { formatLastSeen } from "@/lib/utils";
-import { useEditMessage } from "@/hooks/use-message-edit-delete";
 import { api } from "@/lib/api";
 import { MessageInput } from "./message-input";
+import { decryptMessage } from "@/lib/crypto"; // 🌟 E2EE ডিক্রিপশন ইউটিলিটি ইম্পোর্ট
 
 interface ChatBoxProps {
   conversationId: string;
@@ -65,10 +65,43 @@ export default function ChatBox({
     isFetchingNextPage,
   } = useMessage.useGetMessages(conversationId);
 
-  const messages: Message[] = React.useMemo(() => {
-    const rawList = data?.pages.flatMap((page: unknown) => page as Message[]) ?? [];
-    return [...rawList].reverse();
+  const rawMessages: Message[] = React.useMemo(() => {
+    const list = data?.pages.flatMap((page: unknown) => page as Message[]) ?? [];
+    return [...list].reverse();
   }, [data]);
+
+  // 🌟 স্টেইট ম্যানেজমেন্ট: এনক্রিপ্টেড মেসেজগুলো ব্রাউজারে ডিক্রিপ্ট করার পর রাখার জন্য
+  const [decryptedMessages, setDecryptedMessages] = useState<Message[]>([]);
+
+  // 🌟 E2EE ডিক্রিপশন ইফেক্ট (প্রতিটি মেসেজ রেন্ডার হওয়ার সময় ডিক্রিপ্ট হবে)
+  useEffect(() => {
+    let isMounted = true;
+
+    async function processMessages() {
+      if (!currentUserId) return;
+
+      const processed = await Promise.all(
+        rawMessages.map(async (msg) => {
+          // যদি মেসেজে এনক্রিপ্টেড বডি এবং কি থাকে, তবে ডিক্রিপ্ট করব
+          if (msg.body && msg.encryptedKey) {
+            const plainText = await decryptMessage(msg.body, msg.encryptedKey, currentUserId);
+            return { ...msg, body: plainText };
+          }
+          return msg;
+        })
+      );
+
+      if (isMounted) {
+        setDecryptedMessages(processed);
+      }
+    }
+
+    processMessages();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [rawMessages, currentUserId]);
 
   const { mutateAsync: sendMessage, isPending: isSending } = useMessage.useSendMessage();
   const { mutateAsync: markAsRead } = useMessage.useMarkMessageAsRead?.() || {
@@ -190,9 +223,9 @@ export default function ChatBox({
   }, [socket, conversationId, queryClient, addOrUpdateReaction]);
 
   useEffect(() => {
-    if (!conversationId || !currentUserId || messages.length === 0) return;
+    if (!conversationId || !currentUserId || decryptedMessages.length === 0) return;
 
-    const incomingUnreadMessages = messages.filter((m) => {
+    const incomingUnreadMessages = decryptedMessages.filter((m) => {
       const msgSenderId = m.senderId || m.sender?.id;
       const isMyMessage = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
       const alreadyReadByMe = m.reads?.some((r: any) => String(r.userId) === String(currentUserId));
@@ -215,7 +248,7 @@ export default function ChatBox({
         }
       });
     }
-  }, [conversationId, currentUserId, messages, markAsRead, socket]);
+  }, [conversationId, currentUserId, decryptedMessages, markAsRead, socket]);
 
   const handleObserver = useCallback(
     (entries: IntersectionObserverEntry[]) => {
@@ -236,7 +269,7 @@ export default function ChatBox({
   }, [handleObserver]);
 
   useEffect(() => {
-    if (messages.length > 0 || Object.keys(typingUsers).length > 0) {
+    if (decryptedMessages.length > 0 || Object.keys(typingUsers).length > 0) {
       if (isInitialMount.current) {
         messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
         isInitialMount.current = false;
@@ -244,7 +277,7 @@ export default function ChatBox({
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }
     }
-  }, [messages.length, typingUsers]);
+  }, [decryptedMessages.length, typingUsers]);
 
   useEffect(() => {
     if (!socket) return;
@@ -408,13 +441,13 @@ export default function ChatBox({
             <Loader2 className="h-4 w-4 animate-spin" />
             <span className="text-sm">Loading chat...</span>
           </div>
-        ) : messages.length === 0 ? (
+        ) : decryptedMessages.length === 0 ? (
           <p className="text-center text-muted-foreground text-sm m-auto">
             No messages yet. Say hi! 👋
           </p>
         ) : (
           <div className="flex flex-col space-y-3">
-            {messages.map((msg) => (
+            {decryptedMessages.map((msg) => (
               <div key={msg.id} className="group relative">
                 <MessageBubble
                   msg={msg}
@@ -501,14 +534,19 @@ export default function ChatBox({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 🌟 MESSAGE INPUT COMPONENT INTEGRATION */}
+      {/* 🌟 MESSAGE INPUT COMPONENT WITH E2EE RECIPIENT PUBLIC KEY */}
       <MessageInput
         conversationId={conversationId}
         currentUserId={currentUserId}
         socket={socket}
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
-        onSendMessage={async (payload) => await sendMessage(payload)}
+        onSendMessage={async (payload) => {
+          await sendMessage({
+            ...payload,
+            recipientPublicKey: otherUser?.publicKey || undefined, // 🌟 প্রাপকের পাবলিক কি পাস করা হলো
+          });
+        }}
         isSending={isSending}
         onTyping={handleInputChange}
       />
