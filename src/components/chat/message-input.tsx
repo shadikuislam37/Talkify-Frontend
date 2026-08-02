@@ -48,7 +48,6 @@ export const MessageInput = ({
     validators: { onChange: sendMessageSchema },
     onSubmit: async ({ value }) => {
       const activeId = conversationId || value.conversationId;
-      // 🌟 এখানে body অথবা mediaPreview.url যেকোনো একটা থাকলেই যেন সাবমিট এলাও হয়
       if (!activeId || (!value.body?.trim() && !mediaPreview?.url)) return;
 
       try {
@@ -63,7 +62,11 @@ export const MessageInput = ({
           replyToId: replyingTo?.id || undefined,
         };
 
-        form.reset({ body: "", fileUrl: "", fileType: "", fileName: "", conversationId: activeId });
+        // ফর্ম ফিল্ডগুলো পরিষ্কার করা হচ্ছে
+        form.setFieldValue("body", "");
+        form.setFieldValue("fileUrl", "");
+        form.setFieldValue("fileType", "");
+        form.setFieldValue("fileName", "");
         setMediaPreview(null);
         onCancelReply();
 
@@ -121,11 +124,10 @@ export const MessageInput = ({
       )}
 
       {/* Media Preview Box */}
-      {/* Media Preview Box */}
       {mediaPreview && mediaPreview.url && (
         <div className="p-2 border-b bg-muted/40">
           <div className="relative w-fit flex items-center gap-2 p-2 bg-background rounded-md border shadow-sm">
-            {mediaPreview.type.startsWith("image/") ? (
+            {mediaPreview.type?.startsWith("image/") ? (
               <div className="relative w-14 h-14 rounded overflow-hidden bg-muted">
                 <Image 
                   src={mediaPreview.url} 
@@ -135,12 +137,12 @@ export const MessageInput = ({
                   unoptimized 
                 />
               </div>
-            ) : mediaPreview.type.startsWith("video/") ? (
+            ) : mediaPreview.type?.startsWith("video/") ? (
               <div className="flex items-center gap-2 text-xs text-muted-foreground p-1">
                 <Film className="h-4 w-4 text-primary" />
                 <span className="max-w-[150px] truncate">{mediaPreview.name}</span>
               </div>
-            ) : mediaPreview.type.startsWith("audio/") ? (
+            ) : mediaPreview.type?.startsWith("audio/") ? (
               <div className="flex items-center gap-2 text-xs text-muted-foreground p-1">
                 <Music className="h-4 w-4 text-primary" />
                 <span className="max-w-[150px] truncate">{mediaPreview.name}</span>
@@ -196,7 +198,6 @@ export const MessageInput = ({
           )}
         </form.Field>
 
-        {/* 🌟 সেন্ড বাটনে মিডিয়া প্রিভিউ বা বডি যেকোনো একটি থাকলেই যেন এটি সচল হয় */}
         <form.Subscribe
           selector={(state) => [state.values.body, mediaPreview]}
         >

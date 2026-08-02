@@ -5,13 +5,14 @@ export const useUploadMedia = () => {
   return useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
-      formData.append("file", file);
+      // 🌟 ১. ব্যাকএন্ডের upload.array('files') এর সাথে মিল রেখে 'files' দিতে হবে
+      formData.append("files", file);
 
-      // ব্যাকএন্ডে ফাইল আপলোড রাউট (যা ক্লাউড স্টোরেজে পাঠিয়ে URL রিটার্ন করবে)
-      const res = await api.post("/media/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      return res.data.url; // আপলোড করা ফাইলের URL
+      // 🌟 ২. headers অংশটি মুছে ফেলা হয়েছে যাতে Axios নিজে boundary সেট করতে পারে
+      const res = await api.post("/media/upload", formData);
+
+      // 🌟 ৩. ব্যাকএন্ডের রেসপন্স স্ট্রাকচার অনুযায়ী fileUrl রিটার্ন করা হলো
+      return res.data.data[0].fileUrl; 
     },
   });
 };

@@ -18,6 +18,7 @@ import ProfileSettingsModal from "@/components/ProfileSettings";
 import { useGetConversations } from "@/hooks/use-conversations";
 import { useSocket } from "@/hooks/use-socket";
 import { useQueryClient } from "@tanstack/react-query";
+import { useCallStore } from "@/store/use-call-store";
 
 interface ChatLayoutProps {
   currentUserId?: string;
@@ -52,12 +53,7 @@ export const ChatLayout = ({
   const { data: conversations = [], isLoading } = useGetConversations();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
 
-  const [incomingCall, setIncomingCall] = useState<{
-    from: string;
-    name: string;
-    sdp: any;
-    isVideo?: boolean;
-  } | null>(null);
+  const { setIncomingCall, incomingCall } = useCallStore();
 
   const activeConversationId = selectedConversationId;
 
@@ -65,14 +61,14 @@ export const ChatLayout = ({
     (c: Conversation) => c.id === activeConversationId
   );
 
-  const { socket } = useSocket(
-    activeConversationId || undefined,
-    currentUserId,
-    (offerData) => setIncomingCall(offerData),
-    undefined,
-    undefined,
-    () => setIncomingCall(null)
-  );
+const { socket } = useSocket(
+  activeConversationId || undefined,
+  currentUserId,
+  (offerData) => setIncomingCall(offerData), // সরাসরি স্টোরে সেট হবে
+  undefined,
+  undefined,
+  () => setIncomingCall(null) // কল কেটে গেলে স্টোর খালি হবে
+);
 
   const handleSelectConversation = (id: string) => {
     setSelectedConversationId(id);
@@ -151,40 +147,7 @@ export const ChatLayout = ({
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background relative">
       
-      {incomingCall && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm animate-in fade-in zoom-in duration-200">
-          <div className="bg-card border p-6 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 text-center gap-4">
-            <Avatar className="h-20 w-20 border-4 border-primary/20 animate-pulse">
-              <AvatarFallback className="text-xl font-bold">
-                {incomingCall.name ? incomingCall.name.slice(0, 2).toUpperCase() : "IC"}
-              </AvatarFallback>
-            </Avatar>
-            
-            <div>
-              <h3 className="text-lg font-bold">Incoming {incomingCall.isVideo ? "Video" : "Audio"} Call</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                <span className="font-semibold text-foreground">{incomingCall.name}</span> is calling you...
-              </p>
-            </div>
-
-            <div className="flex items-center gap-4 w-full mt-2">
-              <Button
-                variant="destructive"
-                className="flex-1 gap-2 rounded-xl"
-                onClick={handleRejectCall}
-              >
-                <PhoneOff className="h-4 w-4" /> Decline
-              </Button>
-              <Button
-                className="flex-1 gap-2 rounded-xl bg-green-600 hover:bg-green-700 text-white"
-                onClick={handleAcceptCall}
-              >
-                {incomingCall.isVideo ? <Video className="h-4 w-4" /> : <Phone className="h-4 w-4" />} Accept
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+     
 
       {/* Sidebar Section */}
       <aside

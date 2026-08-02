@@ -31,21 +31,21 @@ export default function ProfileSettingsModal({
   const { mutate: toggleStatus, isPending: isTogglingStatus } = useToggleActiveStatus();
 
   // 🌟 ছবি আপলোডের ফাংশন
-  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 🌟 সংশোধিত ছবি আপলোডের ফাংশন
+const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsUploading(true);
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("files", file); // 🌟 ব্যাকএন্ডের upload.array('files') এর সাথে মিল রেখে 'files' করা হলো
 
     try {
-      const res = await api.post("/media/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const res = await api.post("/media/upload", formData);
 
       if (res.data.success) {
-        setImage(res.data.data.fileUrl);
+        // 🌟 যেহেতু ব্যাকএন্ড এখন অ্যারে (Array) রিটার্ন করে, তাই [0] ইন্ডেক্স থেকে fileUrl নিতে হবে
+        setImage(res.data.data[0].fileUrl);
       } else {
         alert(res.data.message || "Failed to upload image.");
       }

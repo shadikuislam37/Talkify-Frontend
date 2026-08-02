@@ -17,9 +17,9 @@ interface MessageBubbleProps {
   highlightedMsgId?: string | null;
   onReply?: (msg: Message) => void;
   onEdit?: (msgId: string, currentBody: string) => void;
-  onDelete?: (msgId: string) => void; 
-  onDeleteForMe?: (msgId: string) => void; 
-  onReaction?: (msgId: string, emoji: string) => void; 
+  onDelete?: (msgId: string) => void;
+  onDeleteForMe?: (msgId: string) => void;
+  onReaction?: (msgId: string, emoji: string) => void;
   onScrollToReply?: (targetId: string) => void;
 }
 
@@ -46,9 +46,6 @@ export function MessageBubble({
 
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
-
-
- const isEdited = msg.updatedAt && msg.createdAt && (new Date(msg.updatedAt).getTime() - new Date(msg.createdAt).getTime() > 3000);
 
   const isReadByOther = React.useMemo(() => {
     if (!isMe) return false;
@@ -258,7 +255,7 @@ export function MessageBubble({
               </p>
             ) : (
               <>
-                {msg.image && (
+                {msg.image && !msg.fileUrl && (
                   <div className="relative w-full min-w-[200px] h-48 mb-1 rounded-md overflow-hidden bg-muted/20">
                     <Image
                       src={msg.image}
@@ -273,14 +270,15 @@ export function MessageBubble({
 
                 {msg.fileUrl && (
                   <div className="mt-1">
-                    {msg.fileType?.startsWith("image/") ? (
+                    {msg.fileType?.startsWith("image/") || (msg.image && msg.fileUrl) ? (
                       <div className="relative w-64 h-48 max-w-xs rounded-lg overflow-hidden">
                         <Image 
-                          src={msg.fileUrl} 
+                          src={msg.fileUrl || msg.image!} 
                           alt="attachment" 
                           fill 
                           sizes="(max-width: 768px) 100vw, 256px"
                           className="object-cover" 
+                          unoptimized
                         />
                       </div>
                     ) : (
@@ -309,9 +307,9 @@ export function MessageBubble({
                 isMe ? "text-primary-foreground/80" : "text-muted-foreground"
               }`}
             >
-            {isEdited && !isDeleted && (
-  <span className="italic opacity-70 mr-1 select-none">(edited)</span>
-)}
+              {msg.isEdited && !isDeleted && (
+                <span className="italic opacity-70 mr-1 select-none">(edited)</span>
+              )}
 
               <span>{formatTime(msg.createdAt)}</span>
 

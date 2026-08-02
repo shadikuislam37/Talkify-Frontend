@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocket } from "@/hooks/use-socket";
 import { useMessage } from "@/hooks/use-messages";
-import { Loader2, Info, Video, Check, X } from "lucide-react";
+import { Loader2, Info, Video, Phone, Check, X } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ import { useOnlineUsers } from "@/hooks/use-online-users";
 import { formatLastSeen } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { MessageInput } from "./message-input";
-import { decryptMessage,encryptMessage } from "@/lib/crypto"; // 🌟 E2EE ডিক্রিপশন ইউটিলিটি ইম্পোর্ট
+import { decryptMessage, encryptMessage } from "@/lib/crypto";
 
 interface ChatBoxProps {
   conversationId: string;
@@ -69,10 +69,8 @@ export default function ChatBox({
     return [...list].reverse();
   }, [data]);
 
-  // 🌟 স্টেইট ম্যানেজমেন্ট: এনক্রিপ্টেড মেসেজগুলো ব্রাউজারে ডিক্রিপ্ট করার পর রাখার জন্য
   const [decryptedMessages, setDecryptedMessages] = useState<Message[]>([]);
 
-  // 🌟 E2EE ডিক্রিপশন ইফেক্ট (প্রতিটি মেসেজ রেন্ডার হওয়ার সময় ডিক্রিপ্ট হবে)
   useEffect(() => {
     let isMounted = true;
 
@@ -81,7 +79,6 @@ export default function ChatBox({
 
       const processed = await Promise.all(
         rawMessages.map(async (msg) => {
-          // যদি মেসেজে এনক্রিপ্টেড বডি এবং কি থাকে, তবে ডিক্রিপ্ট করব
           if (msg.body && msg.encryptedKey) {
             const plainText = await decryptMessage(msg.body, msg.encryptedKey, currentUserId);
             return { ...msg, body: plainText };
@@ -136,13 +133,30 @@ export default function ChatBox({
     }
   };
 
+  // 🌟 অডিও কল শুরু করার হ্যান্ডলার
+  const handleStartAudioCall = () => {
+    if (!otherUser) return;
+    startCall(
+      {
+        id: otherUser.id,
+        name: otherUser.name || "User",
+        image: otherUser.image || undefined,
+      },
+      false // false মানে অডিও কল
+    );
+  };
+
+  // 🌟 ভিডিও কল শুরু করার হ্যান্ডলার
   const handleStartVideoCall = () => {
     if (!otherUser) return;
-    startCall({
-      id: otherUser.id,
-      name: otherUser.name || "User",
-      image: otherUser.image || undefined,
-    });
+    startCall(
+      {
+        id: otherUser.id,
+        name: otherUser.name || "User",
+        image: otherUser.image || undefined,
+      },
+      true // true মানে ভিডিও কল
+    );
   };
 
   useEffect(() => {
@@ -194,61 +208,35 @@ export default function ChatBox({
       addOrUpdateReaction(data.messageId, data.reaction);
     };
 
-    const confirmDeleteForMe = async () => {
-  if (!deletingMessageId) return;
-  try {
-    setIsDeleting(true);
-    
-    if (socket) {
-      socket.emit("delete_message_for_me", { messageId: deletingMessageId });
-    }
-
-    queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
-      if (!oldData) return oldData;
-      return {
-        ...oldData,
-        pages: oldData.pages.map((page: Message[]) =>
-          page.filter((msg) => msg.id !== deletingMessageId)
-        ),
-      };
-    });
-  } catch (err) {
-    console.error("Failed to delete message for me:", err);
-  } finally {
-    setIsDeleting(false);
-    setDeletingMessageId(null);
-  }
-};
-
     const handleMessageEdited = async (updatedMessage: any) => {
-  try {
-    let decryptedBody = updatedMessage.body;
-    if (updatedMessage.body && updatedMessage.encryptedKey) {
-      decryptedBody = await decryptMessage(
-        updatedMessage.body,
-        updatedMessage.encryptedKey,
-        currentUserId
-      );
-    }
+      try {
+        let decryptedBody = updatedMessage.body;
+        if (updatedMessage.body && updatedMessage.encryptedKey) {
+          decryptedBody = await decryptMessage(
+            updatedMessage.body,
+            updatedMessage.encryptedKey,
+            currentUserId
+          );
+        }
 
-    const finalMessage = {
-      ...updatedMessage,
-      body: decryptedBody,
+        const finalMessage = {
+          ...updatedMessage,
+          body: decryptedBody,
+        };
+
+        queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page: Message[]) =>
+              page.map((msg) => (msg.id === finalMessage.id ? finalMessage : msg))
+            ),
+          };
+        });
+      } catch (error) {
+        console.error("Failed to decrypt edited message:", error);
+      }
     };
-
-    queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
-      if (!oldData) return oldData;
-      return {
-        ...oldData,
-        pages: oldData.pages.map((page: Message[]) =>
-          page.map((msg) => (msg.id === finalMessage.id ? finalMessage : msg))
-        ),
-      };
-    });
-  } catch (error) {
-    console.error("Failed to decrypt edited message:", error);
-  }
-};
 
     socket.on("receive_message", handleNewMessage);
     socket.on("on_message_status_change", handleStatusChange);
@@ -263,7 +251,7 @@ export default function ChatBox({
       socket.off("receive_reaction", handleReceiveReaction);
       socket.off("on_message_edited", handleMessageEdited);
     };
-  }, [socket, conversationId, queryClient, addOrUpdateReaction]);
+  }, [socket, conversationId, queryClient, addOrUpdateReaction, currentUserId]);
 
   useEffect(() => {
     if (!conversationId || !currentUserId || decryptedMessages.length === 0) return;
@@ -364,42 +352,39 @@ export default function ChatBox({
   };
 
   const handleSaveEdit = async (messageId: string) => {
-  if (!editText.trim()) return;
-  try {
-    const rawText = editText.trim();
-    let finalBody = rawText;
-    let finalKey = undefined;
+    if (!editText.trim()) return;
+    try {
+      const rawText = editText.trim();
+      let finalBody = rawText;
+      let finalKey = undefined;
 
-    // 🌟 ১. নতুন টেক্সটটিকেও প্রাপকের পাবলিক কি দিয়ে এনক্রিপ্ট করুন
-    if (otherUser?.publicKey) {
-      const encrypted = await encryptMessage(rawText, otherUser.publicKey);
-      finalBody = encrypted.encryptedBody;
-      finalKey = encrypted.encryptedKey;
-    }
+      if (otherUser?.publicKey) {
+        const encrypted = await encryptMessage(rawText, otherUser.publicKey);
+        finalBody = encrypted.encryptedBody;
+        finalKey = encrypted.encryptedKey;
+      }
 
-    // 🌟 ২. API তে এনক্রিপ্টেড ডেটা পাঠান (ব্যাকএন্ডের সাথে মিল রেখে প্রপার্টির নাম দিন)
-    await api.patch(`/messages/edit/${messageId}`, { 
-      encryptedBody: finalBody, 
-      encryptedKey: finalKey 
-    });
-
-    // 🌟 ৩. সকেটেও এনক্রিপ্টেড ডেটা পাঠান
-    if (socket && conversationId) {
-      socket.emit("edit_message", { 
-        messageId, 
+      await api.patch(`/messages/edit/${messageId}`, { 
         encryptedBody: finalBody, 
-        encryptedKey: finalKey,
-        conversationId 
+        encryptedKey: finalKey 
       });
-    }
 
-    setEditingMessageId(null);
-    setEditText("");
-    queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
-  } catch (err) {
-    console.error("Failed to edit message:", err);
-  }
-};
+      if (socket && conversationId) {
+        socket.emit("edit_message", { 
+          messageId, 
+          encryptedBody: finalBody, 
+          encryptedKey: finalKey,
+          conversationId 
+        });
+      }
+
+      setEditingMessageId(null);
+      setEditText("");
+      queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
+    } catch (err) {
+      console.error("Failed to edit message:", err);
+    }
+  };
 
   const confirmDeleteMessage = async () => {
     if (!deletingMessageId) return;
@@ -427,31 +412,31 @@ export default function ChatBox({
     }
   };
 
-const confirmDeleteForMe = async () => {
-  if (!deletingMessageId) return;
-  try {
-    setIsDeleting(true);
-    
-    if (socket) {
-      socket.emit("delete_message_for_me", { messageId: deletingMessageId });
-    }
+  const confirmDeleteForMe = async () => {
+    if (!deletingMessageId) return;
+    try {
+      setIsDeleting(true);
+      
+      if (socket) {
+        socket.emit("delete_message_for_me", { messageId: deletingMessageId });
+      }
 
-    queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
-      if (!oldData) return oldData;
-      return {
-        ...oldData,
-        pages: oldData.pages.map((page: Message[]) =>
-          page.filter((msg) => msg.id !== deletingMessageId)
-        ),
-      };
-    });
-  } catch (err) {
-    console.error("Failed to delete message for me:", err);
-  } finally {
-    setIsDeleting(false);
-    setDeletingMessageId(null);
-  }
-};
+      queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page: Message[]) =>
+            page.filter((msg) => msg.id !== deletingMessageId)
+          ),
+        };
+      });
+    } catch (err) {
+      console.error("Failed to delete message for me:", err);
+    } finally {
+      setIsDeleting(false);
+      setDeletingMessageId(null);
+    }
+  };
 
   const typingUserNames = Object.values(typingUsers);
 
@@ -491,16 +476,31 @@ const confirmDeleteForMe = async () => {
 
         <div className="flex items-center gap-1">
           {!conversation?.isGroup && otherUser && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={handleStartVideoCall}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              title="Start Video Call"
-            >
-              <Video className="h-4 w-4" />
-            </Button>
+            <>
+              {/* 🌟 অডিও কল বাটন */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleStartAudioCall}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                title="Start Audio Call"
+              >
+                <Phone className="h-4 w-4" />
+              </Button>
+
+              {/* 🌟 ভিডিও কল বাটন */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleStartVideoCall}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                title="Start Video Call"
+              >
+                <Video className="h-4 w-4" />
+              </Button>
+            </>
           )}
 
           {conversation?.isGroup && (
@@ -626,71 +626,68 @@ const confirmDeleteForMe = async () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 🌟 MESSAGE INPUT COMPONENT WITH E2EE RECIPIENT PUBLIC KEY */}
+      {/* MESSAGE INPUT COMPONENT */}
       <MessageInput
         conversationId={conversationId}
         currentUserId={currentUserId}
         socket={socket}
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
-       onSendMessage={async (payload) => {
-  // 🌟 ১. চেক করুন মেসেজে কোনো বডি, ইমেজ বা ফাইল আছে কি না
-  console.log("📦 Sending Payload to API:", payload);
-  if (!payload.body && !payload.image && !payload.fileUrl) {
-    console.error("❌ Cannot send an empty message! Payload:", payload);
-    return; // ফাঁকা হলে ফাংশন এখানেই থেমে যাবে, সার্ভারে রিকোয়েস্ট যাবে না
-  }
+        onSendMessage={async (payload) => {
+          if (!payload.body && !payload.image && !payload.fileUrl) {
+            console.error("Cannot send an empty message!");
+            return;
+          }
 
-  try {
-    // 🌟 ২. সবকিছু ঠিক থাকলে সেন্ড মেসেজ কল হবে
-    await sendMessage({
-      ...payload,
-      recipientPublicKey: otherUser?.publicKey || undefined, // প্রাপকের পাবলিক কি
-    });
-  } catch (error) {
-    console.error("❌ Message send failed:", error);
-  }
-}}
+          try {
+            await sendMessage({
+              ...payload,
+              recipientPublicKey: otherUser?.publicKey || undefined,
+            });
+          } catch (error) {
+            console.error("Message send failed:", error);
+          }
+        }}
         isSending={isSending}
         onTyping={handleInputChange}
       />
 
       {deletingMessageId && (
-  <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-    <div className="bg-background border rounded-lg p-6 max-w-sm w-full shadow-lg space-y-4">
-      <h3 className="text-lg font-semibold text-foreground">Delete Message?</h3>
-      <p className="text-sm text-muted-foreground">
-        Choose how you want to delete this message.
-      </p>
-      <div className="flex flex-col gap-2 pt-2">
-        <Button 
-          type="button" 
-          variant="destructive" 
-          disabled={isDeleting} 
-          onClick={confirmDeleteMessage}
-        >
-          {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete for Everyone"}
-        </Button>
-        <Button 
-          type="button" 
-          variant="outline" 
-          disabled={isDeleting} 
-          onClick={confirmDeleteForMe}
-        >
-          Delete for Me
-        </Button>
-        <Button 
-          type="button" 
-          variant="ghost" 
-          disabled={isDeleting} 
-          onClick={() => setDeletingMessageId(null)}
-        >
-          Cancel
-        </Button>
-      </div>
-    </div>
-  </div>
-)}
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-background border rounded-lg p-6 max-w-sm w-full shadow-lg space-y-4">
+            <h3 className="text-lg font-semibold text-foreground">Delete Message?</h3>
+            <p className="text-sm text-muted-foreground">
+              Choose how you want to delete this message.
+            </p>
+            <div className="flex flex-col gap-2 pt-2">
+              <Button 
+                type="button" 
+                variant="destructive" 
+                disabled={isDeleting} 
+                onClick={confirmDeleteMessage}
+              >
+                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete for Everyone"}
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                disabled={isDeleting} 
+                onClick={confirmDeleteForMe}
+              >
+                Delete for Me
+              </Button>
+              <Button 
+                type="button" 
+                variant="ghost" 
+                disabled={isDeleting} 
+                onClick={() => setDeletingMessageId(null)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* GROUP DETAILS MODAL */}
       {conversation?.isGroup && (
