@@ -8,6 +8,15 @@ export const useUploadMedia = () => {
       formData.append("files", file);
 
       const res = await mediaApi.post("/media/upload", formData);
+      
+      console.log("Upload response:", res.data); // 🌟 ডিবাগের জন্য
+
+      if (!res.data?.data?.[0]?.fileUrl) {
+        throw new Error(
+          res.data?.message || "Upload succeeded but response format unexpected"
+        );
+      }
+
       return res.data.data[0].fileUrl;
     },
   });

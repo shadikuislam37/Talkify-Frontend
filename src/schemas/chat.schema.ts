@@ -4,11 +4,13 @@ import { z } from "zod";
 export const sendMessageSchema = z
   .object({
     body: z.string().trim().optional(),
-    image: z.string().optional(), // অথবা fileUrl রাখতে পারেন
+    fileUrl: z.string().optional(),
+    fileType: z.string().optional(),
+    fileName: z.string().optional(),
     conversationId: z.string().min(1, "Conversation ID is required"),
     replyToId: z.string().optional(),
   })
-  .refine((data) => (data.body && data.body.length > 0) || Boolean(data.image), {
+  .refine((data) => (data.body && data.body.length > 0) || Boolean(data.fileUrl), {
     message: "Message must contain either text or an attachment!",
     path: ["body"],
   });
