@@ -131,3 +131,11 @@ export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "Something went wrong. Please try again.";
 }
+
+
+const mediaApi = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_BACKEND_URL, // https://api.talkify.me
+  withCredentials: true,
+});
+
+export { mediaApi };
