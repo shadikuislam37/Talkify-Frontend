@@ -34,12 +34,13 @@ export default function NewChatModal({
     try {
       const response: any = await createChat(user.id);
       
-      // 🌟 বিভিন্ন ফরম্যাট থেকে সেফলি কনভার্সেশন আইডি এক্সট্রাক্ট করা
+      // 🌟 ব্যাকএন্ড বা অ্যাক্সিওস রেসপন্স থেকে সেফলি কনভার্সেশন আইডি এক্সট্রাক্ট করা
       const conversationId = response?.id || response?.data?.id || response?.conversation?.id;
 
-      // লিস্ট রিফ্রেশ করা
+      // ১. কনভার্সেশন লিস্ট রিফ্রেশ করা
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
 
+      // ২. চ্যাট সিলেক্ট করে উইন্ডো ওপেন করা
       if (conversationId && onSelectConversation) {
         onSelectConversation(conversationId);
       }
