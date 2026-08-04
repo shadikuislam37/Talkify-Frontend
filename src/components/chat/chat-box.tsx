@@ -2,7 +2,7 @@
 import { useReactionStore } from "@/store/use-reaction-store";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSocket } from "@/hooks/use-socket";
+import { socket } from "@/lib/socket";
 import { useMessage } from "@/hooks/use-messages";
 import { Loader2, Info, Video, Phone, Check, X } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -16,12 +16,13 @@ import { useOnlineUsers } from "@/hooks/use-online-users";
 import { formatLastSeen } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { MessageInput } from "./message-input";
-import { decryptMessage, encryptMessage } from "@/lib/crypto";
+import { decryptMessage, encryptMessage, getMyPublicKeyPem, Recipient } from "@/lib/crypto";
 
 interface ChatBoxProps {
   conversationId: string;
   currentUserId?: string;
   currentUserName?: string;
+  currentUserPublicKey?: string | null;
   conversation?: Conversation;
   availableUsers?: AuthUser[];
 }
@@ -30,15 +31,16 @@ export default function ChatBox({
   conversationId,
   currentUserId,
   currentUserName = "Someone",
+  currentUserPublicKey,
   conversation,
   availableUsers = [],
 }: ChatBoxProps) {
-  const { socket } = useSocket(conversationId);
   const queryClient = useQueryClient();
 
   const onlineUsers = useOnlineUsers();
   const startCall = useCallStore((state) => state.startCall);
   const [isGroupDetailsOpen, setIsGroupDetailsOpen] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const otherUser = React.useMemo(() => {
     if (!conversation || conversation.isGroup) return null;
@@ -79,11 +81,39 @@ export default function ChatBox({
 
       const processed = await Promise.all(
         rawMessages.map(async (msg) => {
-          if (msg.body && msg.encryptedKey) {
-            const plainText = await decryptMessage(msg.body, msg.encryptedKey, currentUserId);
-            return { ...msg, body: plainText };
+          let updatedMsg = { ...msg };
+
+          // ১. মেইন মেসেজ ডিক্রিপশন
+          if (msg.body && msg.keys && msg.keys.length > 0) {
+            try {
+              const plainText = await decryptMessage(msg.body, msg.keys, currentUserId);
+              if (plainText && !plainText.startsWith("{")) {
+                updatedMsg.body = plainText;
+              }
+            } catch (err) {
+              // fallback to original
+            }
           }
-          return msg;
+
+          // 🌟 ২. রিপ্লাই করা মেসেজ ডিক্রিপশন ফিক্স
+          if (msg.replyTo && msg.replyTo.body) {
+            const rawReplyBody = msg.replyTo.body;
+            if (rawReplyBody.trim().startsWith("{") && msg.replyTo.keys && msg.replyTo.keys.length > 0) {
+              try {
+                const decryptedReply = await decryptMessage(rawReplyBody, msg.replyTo.keys, currentUserId);
+                if (decryptedReply && !decryptedReply.startsWith("{")) {
+                  updatedMsg.replyTo = {
+                    ...msg.replyTo,
+                    body: decryptedReply,
+                  };
+                }
+              } catch (err) {
+                console.error("ChatBox reply decryption error:", err);
+              }
+            }
+          }
+
+          return updatedMsg;
         })
       );
 
@@ -133,125 +163,30 @@ export default function ChatBox({
     }
   };
 
-  // 🌟 অডিও কল শুরু করার হ্যান্ডলার
   const handleStartAudioCall = () => {
     if (!otherUser) return;
     startCall(
-      {
-        id: otherUser.id,
-        name: otherUser.name || "User",
-        image: otherUser.image || undefined,
-      },
-      false // false মানে অডিও কল
+      { id: otherUser.id, name: otherUser.name || "User", image: otherUser.image || undefined },
+      false
     );
   };
 
-  // 🌟 ভিডিও কল শুরু করার হ্যান্ডলার
   const handleStartVideoCall = () => {
     if (!otherUser) return;
     startCall(
-      {
-        id: otherUser.id,
-        name: otherUser.name || "User",
-        image: otherUser.image || undefined,
-      },
-      true // true মানে ভিডিও কল
+      { id: otherUser.id, name: otherUser.name || "User", image: otherUser.image || undefined },
+      true
     );
   };
 
   useEffect(() => {
     if (!socket || !conversationId) return;
+    if (!socket.connected) socket.connect();
     socket.emit("join_conversation", { conversationId });
     return () => {
       socket.emit("leave_conversation", { conversationId });
     };
-  }, [socket, conversationId]);
-
-  useEffect(() => {
-    if (!socket.connected) socket.connect();
-
-    const handleNewMessage = (newMessage: Message) => {
-      queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
-        if (!oldData) return oldData;
-        const newPages = [...oldData.pages];
-        if (newPages.length > 0) newPages[0] = [newMessage, ...newPages[0]];
-        return { ...oldData, pages: newPages };
-      });
-    };
-
-    const handleStatusChange = (data: { messageId: string; userId?: string; readByUserId?: string; status: string }) => {
-      const readerUserId = data.userId || data.readByUserId;
-      queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
-        if (!oldData) return oldData;
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page: Message[]) =>
-            page.map((msg) => {
-              if (msg.id === data.messageId) {
-                const existingReads = msg.reads || [];
-                const alreadyRead = readerUserId 
-                  ? existingReads.some((r: any) => String(r.userId) === String(readerUserId))
-                  : false;
-                const updatedReads = alreadyRead || !readerUserId
-                  ? existingReads
-                  : [...existingReads, { id: Math.random().toString(), messageId: msg.id, userId: readerUserId, readAt: new Date().toISOString() }];
-                return { ...msg, status: data.status as any, reads: updatedReads };
-              }
-              return msg;
-            })
-          ),
-        };
-      });
-    };
-
-    const handleReceiveReaction = (data: { messageId: string; reaction: any }) => {
-      addOrUpdateReaction(data.messageId, data.reaction);
-    };
-
-    const handleMessageEdited = async (updatedMessage: any) => {
-      try {
-        let decryptedBody = updatedMessage.body;
-        if (updatedMessage.body && updatedMessage.encryptedKey) {
-          decryptedBody = await decryptMessage(
-            updatedMessage.body,
-            updatedMessage.encryptedKey,
-            currentUserId
-          );
-        }
-
-        const finalMessage = {
-          ...updatedMessage,
-          body: decryptedBody,
-        };
-
-        queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page: Message[]) =>
-              page.map((msg) => (msg.id === finalMessage.id ? finalMessage : msg))
-            ),
-          };
-        });
-      } catch (error) {
-        console.error("Failed to decrypt edited message:", error);
-      }
-    };
-
-    socket.on("receive_message", handleNewMessage);
-    socket.on("on_message_status_change", handleStatusChange);
-    socket.on("message_read", handleStatusChange);
-    socket.on("receive_reaction", handleReceiveReaction);
-    socket.on("on_message_edited", handleMessageEdited);
-
-    return () => {
-      socket.off("receive_message", handleNewMessage);
-      socket.off("on_message_status_change", handleStatusChange);
-      socket.off("message_read", handleStatusChange);
-      socket.off("receive_reaction", handleReceiveReaction);
-      socket.off("on_message_edited", handleMessageEdited);
-    };
-  }, [socket, conversationId, queryClient, addOrUpdateReaction, currentUserId]);
+  }, [conversationId]);
 
   useEffect(() => {
     if (!conversationId || !currentUserId || decryptedMessages.length === 0) return;
@@ -279,7 +214,7 @@ export default function ChatBox({
         }
       });
     }
-  }, [conversationId, currentUserId, decryptedMessages, markAsRead, socket]);
+  }, [conversationId, currentUserId, decryptedMessages, markAsRead]);
 
   const handleObserver = useCallback(
     (entries: IntersectionObserverEntry[]) => {
@@ -336,7 +271,7 @@ export default function ChatBox({
       socket.off("on_typing_start", handleTypingStart);
       socket.off("on_typing_stop", handleTypingStop);
     };
-  }, [socket, conversationId, currentUserId]);
+  }, [conversationId, currentUserId]);
 
   const handleInputChange = (text: string) => {
     if (!socket) return;
@@ -352,31 +287,28 @@ export default function ChatBox({
   };
 
   const handleSaveEdit = async (messageId: string) => {
-    if (!editText.trim()) return;
+    if (!editText.trim() || !currentUserId) return;
     try {
       const rawText = editText.trim();
-      let finalBody = rawText;
-      let finalKey = undefined;
+      const members = conversation?.users || (otherUser ? [otherUser] : []);
 
-      if (otherUser?.publicKey) {
-        const encrypted = await encryptMessage(rawText, otherUser.publicKey);
-        finalBody = encrypted.encryptedBody;
-        finalKey = encrypted.encryptedKey;
-      }
-
-      await api.patch(`/messages/edit/${messageId}`, { 
-        encryptedBody: finalBody, 
-        encryptedKey: finalKey 
+      const myPublicKeyPem = getMyPublicKeyPem(currentUserId);
+      const recipients: Recipient[] = [];
+      if (myPublicKeyPem) recipients.push({ userId: currentUserId, publicKeyPem: myPublicKeyPem });
+      members.forEach((m) => {
+        if (m.id !== currentUserId && m.publicKey) {
+          recipients.push({ userId: m.id, publicKeyPem: m.publicKey });
+        }
       });
 
-      if (socket && conversationId) {
-        socket.emit("edit_message", { 
-          messageId, 
-          encryptedBody: finalBody, 
-          encryptedKey: finalKey,
-          conversationId 
-        });
-      }
+      if (recipients.length === 0) return;
+
+      const { encryptedBody, keys } = await encryptMessage(rawText, recipients);
+
+      await api.patch(`/messages/edit/${messageId}`, {
+        encryptedBody,
+        keys,
+      });
 
       setEditingMessageId(null);
       setEditText("");
@@ -416,7 +348,8 @@ export default function ChatBox({
     if (!deletingMessageId) return;
     try {
       setIsDeleting(true);
-      
+      await api.delete(`/messages/${deletingMessageId}/delete-for-me`);
+
       if (socket) {
         socket.emit("delete_message_for_me", { messageId: deletingMessageId });
       }
@@ -442,9 +375,8 @@ export default function ChatBox({
 
   return (
     <div className="flex flex-col h-full overflow-hidden border rounded-md bg-background relative">
-      {/* CHAT HEADER SECTION */}
       <div className="flex items-center justify-between border-b p-4 shrink-0">
-        <div 
+        <div
           onClick={() => conversation?.isGroup && setIsGroupDetailsOpen(true)}
           className={`flex items-center gap-3 ${conversation?.isGroup ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
         >
@@ -477,48 +409,23 @@ export default function ChatBox({
         <div className="flex items-center gap-1">
           {!conversation?.isGroup && otherUser && (
             <>
-              {/* 🌟 অডিও কল বাটন */}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={handleStartAudioCall}
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                title="Start Audio Call"
-              >
+              <Button type="button" variant="ghost" size="icon" onClick={handleStartAudioCall} className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Start Audio Call">
                 <Phone className="h-4 w-4" />
               </Button>
-
-              {/* 🌟 ভিডিও কল বাটন */}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={handleStartVideoCall}
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                title="Start Video Call"
-              >
+              <Button type="button" variant="ghost" size="icon" onClick={handleStartVideoCall} className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Start Video Call">
                 <Video className="h-4 w-4" />
               </Button>
             </>
           )}
 
           {conversation?.isGroup && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsGroupDetailsOpen(true)}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              title="Group Info"
-            >
+            <Button type="button" variant="ghost" size="icon" onClick={() => setIsGroupDetailsOpen(true)} className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Group Info">
               <Info className="h-4 w-4" />
             </Button>
           )}
         </div>
       </div>
 
-      {/* MESSAGES LIST AREA */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col min-h-0">
         <div ref={observerTargetRef} className="h-2 w-full">
           {isFetchingNextPage && (
@@ -527,6 +434,15 @@ export default function ChatBox({
             </div>
           )}
         </div>
+
+        {sendError && (
+          <div className="mb-2 p-2 rounded-md bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between">
+            <span>{sendError}</span>
+            <button onClick={() => setSendError(null)} className="ml-2 text-red-500 hover:text-red-700">
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="flex justify-center py-10 text-muted-foreground gap-2 m-auto">
@@ -554,7 +470,7 @@ export default function ChatBox({
                   onDelete={(id) => setDeletingMessageId(id)}
                   onDeleteForMe={async (msgId) => {
                     try {
-                      await api.post(`/messages/delete-for-me/${msgId}`);
+                      await api.delete(`/messages/${msgId}/delete-for-me`);
                       queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
                         if (!oldData) return oldData;
                         return {
@@ -581,6 +497,15 @@ export default function ChatBox({
                     }
                   }}
                   onScrollToReply={scrollToMessage}
+                  onRetry={(failedMsg) => {
+                    if (!failedMsg._retryPayload) return;
+                    sendMessage({
+                      ...failedMsg._retryPayload,
+                      clientId: failedMsg.id,
+                    }).catch((error: any) => {
+                      setSendError(error?.message || "Retry failed. Please try again.");
+                    });
+                  }}
                 />
 
                 {editingMessageId === msg.id && (
@@ -626,7 +551,6 @@ export default function ChatBox({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* MESSAGE INPUT COMPONENT */}
       <MessageInput
         conversationId={conversationId}
         currentUserId={currentUserId}
@@ -634,18 +558,27 @@ export default function ChatBox({
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
         onSendMessage={async (payload) => {
-          if (!payload.body && !payload.image && !payload.fileUrl) {
-            console.error("Cannot send an empty message!");
-            return;
-          }
+          if (!payload.body && !payload.image && !payload.fileUrl) return;
+          if (!currentUserId) return;
+
+          setSendError(null);
+          const clientId =
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? `temp-${crypto.randomUUID()}`
+              : `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
           try {
-            await sendMessage({
+            return await sendMessage({
               ...payload,
-              recipientPublicKey: otherUser?.publicKey || undefined,
+              clientId,
+              replyToPreview: replyingTo ?? undefined,
+              members: conversation?.users || (otherUser ? [otherUser] : []),
+              currentUserId,
+              currentUserPublicKey: currentUserPublicKey
             });
-          } catch (error) {
-            console.error("Message send failed:", error);
+          } catch (error: any) {
+            setSendError(error?.message || "Failed to send message. Please try again.");
+            throw error;
           }
         }}
         isSending={isSending}
@@ -660,28 +593,13 @@ export default function ChatBox({
               Choose how you want to delete this message.
             </p>
             <div className="flex flex-col gap-2 pt-2">
-              <Button 
-                type="button" 
-                variant="destructive" 
-                disabled={isDeleting} 
-                onClick={confirmDeleteMessage}
-              >
+              <Button type="button" variant="destructive" disabled={isDeleting} onClick={confirmDeleteMessage}>
                 {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete for Everyone"}
               </Button>
-              <Button 
-                type="button" 
-                variant="outline" 
-                disabled={isDeleting} 
-                onClick={confirmDeleteForMe}
-              >
+              <Button type="button" variant="outline" disabled={isDeleting} onClick={confirmDeleteForMe}>
                 Delete for Me
               </Button>
-              <Button 
-                type="button" 
-                variant="ghost" 
-                disabled={isDeleting} 
-                onClick={() => setDeletingMessageId(null)}
-              >
+              <Button type="button" variant="ghost" disabled={isDeleting} onClick={() => setDeletingMessageId(null)}>
                 Cancel
               </Button>
             </div>
@@ -689,7 +607,6 @@ export default function ChatBox({
         </div>
       )}
 
-      {/* GROUP DETAILS MODAL */}
       {conversation?.isGroup && (
         <GroupDetailsModal
           open={isGroupDetailsOpen}

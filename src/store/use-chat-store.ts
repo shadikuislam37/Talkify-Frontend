@@ -13,6 +13,10 @@ interface ChatState {
   receiverPublicKey: string | null;
   myPrivateKey: CryptoKey | null;
   setMyPrivateKey: (key: CryptoKey | null) => void;
+
+  myPublicKey: string | null;
+  setMyPublicKey: (key: string | null) => void;
+
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -29,4 +33,7 @@ export const useChatStore = create<ChatState>((set) => ({
   setSelectedConversation: (id= null, publicKey = null) =>
     set({ activeConversationId: id, selectedConversationId: id, receiverPublicKey: publicKey }),
   setMyPrivateKey: (key) => set({ myPrivateKey: key }),
+
+  myPublicKey: null,
+  setMyPublicKey: (key) => set({ myPublicKey: key }),
 }));

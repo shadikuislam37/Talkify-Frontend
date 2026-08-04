@@ -18,7 +18,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { AuthUser } from "@/types";
-import { useAddGroupMember, useLeaveGroup, useMakeGroupAdmin, useRemoveGroupMember } from "@/hooks/use-conversations";
+import { useAddGroupMember, useMakeGroupAdmin, useRemoveGroupMember } from "@/hooks/use-conversations";
 
 interface GroupDetailsModalProps {
   open: boolean;
@@ -50,8 +50,11 @@ export default function GroupDetailsModal({
     useMakeGroupAdmin();
   const { mutateAsync: addMembers, isPending: isAdding } =
     useAddGroupMember();
-  const { mutateAsync: leaveGroup, isPending: isLeaving } =
-    useLeaveGroup?.() || { mutateAsync: async () => {} };
+
+  // 🌟 ফিক্স: আলাদা useLeaveGroup হুক backend-এ কোনো route ছাড়াই কল করছিল (404 দিত)।
+  // আপনার backend-এর removeGroupMember সার্ভিসে আগে থেকেই self-remove লজিক আছে
+  // (isSelfRemove চেক), তাই "leave" আসলে "নিজেকে remove করা" — existing route reuse করা হলো।
+  const isLeaving = isRemoving;
 
   const isCurrentUserAdmin = currentUserId
     ? adminIds.includes(currentUserId)
@@ -75,15 +78,20 @@ export default function GroupDetailsModal({
   };
 
   const handleAddMembers = async () => {
-    if (selectedNewUserIds.length === 0) return;
-    await addMembers({ conversationId, userIds: selectedNewUserIds });
+    if (selectedNewUserIds.length === 0 || !currentUserId) return;
+    // 🌟 ফিক্স: currentUserId এখন পাঠানো হচ্ছে — history backfill flow-এর জন্য দরকার
+    // (নতুন মেম্বারদের জন্য পুরনো মেসেজের AES key নিজের private key দিয়ে re-encrypt করতে হয়)
+    await addMembers({ conversationId, userIds: selectedNewUserIds, currentUserId });
     setSelectedNewUserIds([]);
     setIsAddMemberOpen(false);
   };
 
   const handleLeaveGroup = async () => {
+    if (!currentUserId) return;
     if (confirm("Are you sure you want to leave this group?")) {
-      await leaveGroup(conversationId);
+      // 🌟 ফিক্স: ভাঙা useLeaveGroup-এর বদলে existing remove-member route reuse —
+      // targetUserId === currentUserId হলে backend নিজেই self-remove হিসেবে allow করে
+      await removeMember({ conversationId, targetUserId: currentUserId });
       onOpenChange(false);
     }
   };
@@ -257,7 +265,7 @@ export default function GroupDetailsModal({
               variant="destructive"
               size="sm"
               onClick={handleLeaveGroup}
-              disabled={isLeaving}
+              disabled={isLeaving || !currentUserId}
               className="w-full flex items-center justify-center gap-2 h-9"
             >
               {isLeaving ? (

@@ -6,7 +6,7 @@ import ChatBox from "@/components/chat/chat-box";
 import NewChatModal from "@/components/chat/new-chat-modal";
 import CreateGroupModal from "@/components/chat/create-group-modal";
 import { authClient } from "@/lib/auth-client";
-import { ArrowLeft, LogOut, Loader2, PanelLeft, Settings, Phone, PhoneOff, Video } from "lucide-react";
+import { ArrowLeft, LogOut, Loader2, PanelLeft, Settings } from "lucide-react";
 import { Conversation, AuthUser } from "@/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,11 @@ import { useOnlineUsers } from "@/hooks/use-online-users";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import ProfileSettingsModal from "@/components/ProfileSettings";
 import { useGetConversations } from "@/hooks/use-conversations";
+import { useGetMe } from "@/hooks/use-me";
 import { useSocket } from "@/hooks/use-socket";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallStore } from "@/store/use-call-store";
+import E2EEPinModal from "@/components/E2EEPinModal";
 
 interface ChatLayoutProps {
   currentUserId?: string;
@@ -30,8 +32,7 @@ export const ChatLayout = ({
   currentUserName: propUserName,
 }: ChatLayoutProps) => {
   const router = useRouter();
-  
-  // 🌟 ১. হাইড্রেশন মিসম্যাচ এড়ানোর জন্য মাউন্টেড স্টেট যোগ করা হলো
+
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => {
     setIsMounted(true);
@@ -46,7 +47,10 @@ export const ChatLayout = ({
   const currentUserName = propUserName || session?.user?.name || "User";
   const currentUserEmail = session?.user?.email || "";
   const currentUserImage = session?.user?.image || "";
-
+  
+  const { data: meData, refetch: refetchMe } = useGetMe(!!currentUserId);
+  const currentUserPublicKey = meData?.publicKey || null;
+  
   const onlineUsers = useOnlineUsers();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -61,21 +65,21 @@ export const ChatLayout = ({
     (c: Conversation) => c.id === activeConversationId
   );
 
-const { socket } = useSocket(
-  activeConversationId || undefined,
-  currentUserId,
-  (offerData) => setIncomingCall(offerData), // সরাসরি স্টোরে সেট হবে
-  undefined,
-  undefined,
-  () => setIncomingCall(null) // কল কেটে গেলে স্টোর খালি হবে
-);
+  const { socket } = useSocket(
+    activeConversationId || undefined,
+    currentUserId,
+    (offerData) => setIncomingCall(offerData),
+    undefined,
+    undefined,
+    () => setIncomingCall(null)
+  );
 
-  const handleSelectConversation = (id: string) => {
+  const handleSelectConversation = async (id: string) => {
     setSelectedConversationId(id);
 
     queryClient.setQueryData(["conversations"], (oldData: any) => {
       if (!oldData) return oldData;
-      return oldData.map((conv: any) => 
+      return oldData.map((conv: any) =>
         conv.id === id ? { ...conv, unreadCount: 0 } : conv
       );
     });
@@ -84,28 +88,9 @@ const { socket } = useSocket(
       socket.emit("mark_conversation_as_read", { conversationId: id });
     }
 
-    queryClient.invalidateQueries({ queryKey: ["conversations"] });
-  };
-
-  const handleAcceptCall = async () => {
-    if (!incomingCall) return;
-    try {
-      socket.emit("call_answer", {
-        targetUserId: incomingCall.from,
-        sdp: incomingCall.sdp,
-      });
-    } catch (error) {
-      console.error("Error accepting call:", error);
-    } finally {
-      setIncomingCall(null);
-    }
-  };
-
-  const handleRejectCall = () => {
-    if (incomingCall) {
-      socket.emit("end_call", { targetUserId: incomingCall.from });
-    }
-    setIncomingCall(null);
+    // 🌟 নতুন চ্যাট সিলেক্ট করার সাথে সাথে ক্যাশ সিঙ্ক ও রিফেচ নিশ্চিত করা হলো
+    await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    await queryClient.refetchQueries({ queryKey: ["conversations"] });
   };
 
   const handleLogout = async () => {
@@ -139,17 +124,19 @@ const { socket } = useSocket(
     return Array.from(userMap.values());
   }, [conversations, currentUserId]);
 
-  // 🌟 ২. কম্পোনেন্ট ব্রাউজারে ফুল মাউন্ট হওয়ার আগে এম্পটি রিটার্ন করা (হাইড্রেশন ফিক্স)
   if (!isMounted) {
     return null;
   }
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background relative">
-      
-     
+      {currentUserId && meData && (
+        <E2EEPinModal
+          currentUser={{ ...meData, id: currentUserId }}
+          onKeysReset={() => refetchMe()}
+        />
+      )}
 
-      {/* Sidebar Section */}
       <aside
         className={`h-full flex-col border-r transition-all duration-300 ${
           isSidebarOpen ? "w-full md:w-80 flex" : "hidden"
@@ -248,7 +235,7 @@ const { socket } = useSocket(
           ) : (
             <ChatSidebar
               conversations={conversations}
-              activeId={activeConversationId}
+              activeId={activeConversationId || ""}
               currentUserId={currentUserId}
               onSelectConversation={handleSelectConversation}
               onlineUsers={onlineUsers}
@@ -257,7 +244,6 @@ const { socket } = useSocket(
         </div>
       </aside>
 
-      {/* Main Chat Area */}
       <main
         className={`flex-1 h-full flex-col relative ${
           activeConversationId ? "flex" : "hidden md:flex"
@@ -297,6 +283,7 @@ const { socket } = useSocket(
                 currentUserName={currentUserName}
                 conversation={activeConversation}
                 availableUsers={allAvailableUsers}
+                currentUserPublicKey={currentUserPublicKey}
               />
             </div>
           </div>

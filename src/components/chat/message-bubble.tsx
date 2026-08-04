@@ -1,12 +1,13 @@
 "use client";
 
 import { useReactionStore } from "@/store/use-reaction-store";
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, CheckCheck, CornerUpLeft, Edit2, Reply, Smile, Trash2 } from "lucide-react";
+import { Check, CheckCheck, CornerUpLeft, Edit2, Reply, Smile, Trash2, Loader2, AlertCircle, RotateCw } from "lucide-react";
 import { Message } from "@/types";
 import { formatTime } from "@/lib/utils";
+import { decryptMessage } from "@/lib/crypto";
 
 const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "😤"];
 
@@ -21,6 +22,7 @@ interface MessageBubbleProps {
   onDeleteForMe?: (msgId: string) => void;
   onReaction?: (msgId: string, emoji: string) => void;
   onScrollToReply?: (targetId: string) => void;
+  onRetry?: (msg: Message) => void;
 }
 
 export function MessageBubble({
@@ -34,10 +36,13 @@ export function MessageBubble({
   onDeleteForMe,
   onReaction,
   onScrollToReply,
+  onRetry,
 }: MessageBubbleProps) {
   const msgSenderId = msg.senderId || msg.sender?.id;
   const isMe = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
   const isHighlighted = highlightedMsgId === msg.id;
+  const isPending = msg._sendStatus === "pending";
+  const isFailed = msg._sendStatus === "failed";
 
   const isDeleted = !msg.body && !msg.image && !msg.fileUrl;
 
@@ -46,6 +51,76 @@ export function MessageBubble({
 
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
+  const [actionsVisible, setActionsVisible] = useState(false);
+
+  // 🌟 মেইন মেসেজ ডিক্রিপ্ট করার লোকাল স্টেট
+  const [displayBody, setDisplayBody] = useState<string>(msg.body || "");
+  
+  // 🌟 রিপ্লাই প্রিভিউ মেসেজ ডিক্রিপ্ট করার লোকাল স্টেট
+  const [replyDisplayBody, setReplyDisplayBody] = useState<string>("");
+
+  useEffect(() => {
+    let isMounted = true;
+    async function resolveBodies() {
+      // ১. মেইন মেসেজ ডিক্রিপশন
+      if (msg.body) {
+        if (msg.body.trim().startsWith("{") && msg.keys && msg.keys.length > 0 && currentUserId) {
+          try {
+            const decrypted = await decryptMessage(msg.body, msg.keys, currentUserId);
+            if (isMounted && decrypted && !decrypted.startsWith("{")) {
+              setDisplayBody(decrypted);
+            } else {
+              setDisplayBody(msg.body);
+            }
+          } catch (err) {
+            if (isMounted) setDisplayBody(msg.body);
+          }
+        } else {
+          if (isMounted) setDisplayBody(msg.body);
+        }
+      }
+
+      // ২. রিপ্লাই প্রিভিউ মেসেজ ডিক্রিপশন
+      if (msg.replyTo && msg.replyTo.body) {
+        const rawReply = msg.replyTo.body;
+        if (rawReply.trim().startsWith("{") && msg.replyTo.keys && msg.replyTo.keys.length > 0 && currentUserId) {
+          try {
+            const decryptedReply = await decryptMessage(rawReply, msg.replyTo.keys, currentUserId);
+            if (isMounted && decryptedReply && !decryptedReply.startsWith("{")) {
+              setReplyDisplayBody(decryptedReply);
+            } else {
+              setReplyDisplayBody("Encrypted message");
+            }
+          } catch (err) {
+            if (isMounted) setReplyDisplayBody("Encrypted message");
+          }
+        } else {
+          if (isMounted) setReplyDisplayBody(rawReply);
+        }
+      }
+    }
+
+    resolveBodies();
+    return () => {
+      isMounted = false;
+    };
+  }, [msg.body, msg.keys, msg.replyTo, currentUserId]);
+
+  const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleTouchStart = () => {
+    if (isDeleted) return;
+    pressTimerRef.current = setTimeout(() => {
+      setActionsVisible((prev) => !prev);
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+  };
 
   const isReadByOther = React.useMemo(() => {
     if (!isMe) return false;
@@ -66,9 +141,11 @@ export function MessageBubble({
         isHighlighted ? "bg-primary/20 ring-2 ring-primary/40" : ""
       } ${isMe ? "items-end" : "items-start"}`}
     >
+      {/* বাইরের দিকের টপ রিপ্লাই লেবেল */}
       {!isDeleted && msg.replyTo && (
         <div
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             const targetId = msg.replyToId || msg.replyTo?.id;
             if (targetId && onScrollToReply) onScrollToReply(targetId);
           }}
@@ -97,22 +174,25 @@ export function MessageBubble({
           </Avatar>
         )}
 
-        {!isDeleted && (
+        {!isDeleted && !isPending && !isFailed && (
           <div
-            className={`hidden group-hover:flex items-center gap-1 ${
-              isMe ? "order-first" : "order-last"
-            }`}
+            className={`${
+              actionsVisible ? "flex" : "hidden group-hover:flex"
+            } items-center gap-1 ${isMe ? "order-first" : "order-last"}`}
           >
             {onReaction && (
               <div className="relative">
                 <div
                   role="button"
                   tabIndex={0}
-                  onClick={() => setShowReactionPicker(!showReactionPicker)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowReactionPicker(!showReactionPicker);
+                  }}
                   title="React"
-                  className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors cursor-pointer inline-flex items-center justify-center"
+                  className="p-2 hover:bg-muted rounded text-muted-foreground transition-colors cursor-pointer inline-flex items-center justify-center active:scale-95"
                 >
-                  <Smile className="h-3.5 w-3.5" />
+                  <Smile className="h-4 w-4" />
                 </div>
 
                 {showReactionPicker && (
@@ -121,11 +201,12 @@ export function MessageBubble({
                       <button
                         key={emoji}
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           onReaction(msg.id, emoji);
                           setShowReactionPicker(false);
                         }}
-                        className="hover:bg-muted p-1.5 rounded-full text-base transition-transform hover:scale-125 focus:outline-none cursor-pointer"
+                        className="hover:bg-muted p-1.5 rounded-full text-base transition-transform hover:scale-125 active:scale-110 focus:outline-none cursor-pointer"
                       >
                         {emoji}
                       </button>
@@ -138,22 +219,28 @@ export function MessageBubble({
             {isMe && onEdit && (
               <button
                 type="button"
-                onClick={() => onEdit(msg.id, msg.body || "")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(msg.id, displayBody);
+                }}
                 title="Edit message"
-                className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
+                className="p-2 hover:bg-muted rounded text-muted-foreground transition-colors active:scale-95"
               >
-                <Edit2 className="h-3.5 w-3.5" />
+                <Edit2 className="h-4 w-4" />
               </button>
             )}
 
             {onReply && (
               <button
                 type="button"
-                onClick={() => onReply(msg)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReply(msg);
+                }}
                 title="Reply"
-                className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
+                className="p-2 hover:bg-muted rounded text-muted-foreground transition-colors active:scale-95"
               >
-                <Reply className="h-3.5 w-3.5" />
+                <Reply className="h-4 w-4" />
               </button>
             )}
 
@@ -161,11 +248,14 @@ export function MessageBubble({
               <div className="relative">
                 <button
                   type="button"
-                  onClick={() => setShowDeleteMenu(!showDeleteMenu)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDeleteMenu(!showDeleteMenu);
+                  }}
                   title="Delete options"
-                  className="p-1 hover:bg-muted rounded text-muted-foreground transition-colors"
+                  className="p-2 hover:bg-muted rounded text-muted-foreground transition-colors active:scale-95"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-4 w-4" />
                 </button>
 
                 {showDeleteMenu && (
@@ -173,28 +263,30 @@ export function MessageBubble({
                     {onDelete && (
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           onDelete(msg.id);
                           setShowDeleteMenu(false);
                         }}
-                        className="text-left px-3 py-1.5 text-xs hover:bg-muted text-red-500 transition-colors cursor-pointer font-medium"
+                        className="text-left px-3 py-2 text-xs hover:bg-muted text-red-500 transition-colors cursor-pointer font-medium"
                       >
                         Delete
                       </button>
                     )}
 
-                    {/* {onDeleteForMe && (
+                    {onDeleteForMe && (
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           onDeleteForMe(msg.id);
                           setShowDeleteMenu(false);
                         }}
-                        className="text-left px-3 py-1.5 text-xs hover:bg-muted text-foreground transition-colors cursor-pointer"
+                        className="text-left px-3 py-2 text-xs hover:bg-muted text-foreground transition-colors cursor-pointer"
                       >
                         Delete for Me
                       </button>
-                    )} */}
+                    )}
                   </div>
                 )}
               </div>
@@ -209,33 +301,25 @@ export function MessageBubble({
             </span>
           )}
 
-          {!isDeleted && msg.replyTo && (
-            <div
-              onClick={() => {
-                const targetId = msg.replyToId || msg.replyTo?.id;
-                if (targetId && onScrollToReply) onScrollToReply(targetId);
-              }}
-              className={`cursor-pointer text-xs p-2 rounded-xl mb-1.5 border truncate ${
-                isMe
-                  ? "bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground/90"
-                  : "bg-background/60 border-border/60 text-muted-foreground"
-              }`}
-            >
-              <p className="truncate text-[11px] opacity-90">{msg.replyTo.body || "Attachment"}</p>
-            </div>
-          )}
-
           <div
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            onMouseDown={handleTouchStart}
+            onMouseUp={handleTouchEnd}
+            onMouseLeave={handleTouchEnd}
             className={`p-2.5 rounded-2xl border space-y-1 relative ${
               isMe
                 ? "bg-primary text-primary-foreground rounded-br-none self-end"
                 : "bg-muted/50 rounded-bl-none self-start"
-            }`}
+            } ${!isDeleted ? "cursor-pointer select-none" : ""} ${
+              isPending ? "opacity-60" : ""
+            } ${isFailed ? "ring-1 ring-red-400" : ""}`}
           >
-            {/* 🌟 Reply inside bubble with proper contrast */}
+            {/* 🌟 বাবলের ভেতরের রিপ্লাই প্রিভিউ বক্স (ডিক্রিপ্ট করা টেক্সট সহ) */}
             {!isDeleted && msg.replyTo && (
               <div
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   const targetId = msg.replyToId || msg.replyTo?.id;
                   if (targetId && onScrollToReply) onScrollToReply(targetId);
                 }}
@@ -245,7 +329,9 @@ export function MessageBubble({
                     : "bg-muted/60 border-border/60 text-foreground"
                 }`}
               >
-                <p className="truncate text-[11px] font-medium">{msg.replyTo.body || "Attachment"}</p>
+                <p className="truncate text-[11px] font-medium">
+                  {replyDisplayBody || (msg.replyTo.body?.trim().startsWith("{") ? "Encrypted message" : msg.replyTo.body) || "Attachment"}
+                </p>
               </div>
             )}
 
@@ -272,20 +358,21 @@ export function MessageBubble({
                   <div className="mt-1">
                     {msg.fileType?.startsWith("image/") || (msg.image && msg.fileUrl) ? (
                       <div className="relative w-64 h-48 max-w-xs rounded-lg overflow-hidden">
-                        <Image 
-                          src={msg.fileUrl || msg.image!} 
-                          alt="attachment" 
-                          fill 
+                        <Image
+                          src={msg.fileUrl || msg.image!}
+                          alt="attachment"
+                          fill
                           sizes="(max-width: 768px) 100vw, 256px"
-                          className="object-cover" 
+                          className="object-cover"
                           unoptimized
                         />
                       </div>
                     ) : (
-                      <a 
-                        href={msg.fileUrl} 
-                        target="_blank" 
+                      <a
+                        href={msg.fileUrl}
+                        target="_blank"
                         rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
                         className="flex items-center gap-3 p-3 bg-muted/60 rounded-xl border hover:bg-muted transition"
                       >
                         <span className="text-2xl">📄</span>
@@ -298,7 +385,7 @@ export function MessageBubble({
                   </div>
                 )}
 
-                {msg.body && <p className="text-sm font-medium break-words">{msg.body}</p>}
+                {displayBody && <p className="text-sm font-medium break-words">{displayBody}</p>}
               </>
             )}
 
@@ -315,7 +402,11 @@ export function MessageBubble({
 
               {isMe && (
                 <span className="ml-0.5">
-                  {isReadByOther ? (
+                  {isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin opacity-70" />
+                  ) : isFailed ? (
+                    <AlertCircle className="h-3.5 w-3.5 text-red-400" />
+                  ) : isReadByOther ? (
                     <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold" />
                   ) : (
                     <Check className="h-3.5 w-3.5 opacity-70" />
@@ -325,17 +416,54 @@ export function MessageBubble({
             </div>
           </div>
 
-          {!isDeleted && currentReactions.length > 0 && (
-            <div
-              className={`absolute -bottom-2 ${
-                isMe ? "right-2" : "left-2"
-              } bg-background border rounded-full px-1.5 py-0.5 text-xs shadow flex items-center gap-1 z-10`}
+          {isFailed && onRetry && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry(msg);
+              }}
+              className={`mt-1 flex items-center gap-1 text-[11px] text-red-500 hover:text-red-600 hover:underline ${
+                isMe ? "self-end" : "self-start"
+              }`}
             >
-              {currentReactions.map((r: any) => (
-                <span key={r.id || r.userId || r.emoji}>{r.emoji}</span>
-              ))}
-            </div>
+              <RotateCw className="h-3 w-3" />
+              Failed to send — Tap to retry
+            </button>
           )}
+
+          {/* রিয়্যাকশন গ্রুপিং ও কাউন্ট */}
+          {!isDeleted && currentReactions.length > 0 && (() => {
+            const groupedReactions = currentReactions.reduce((acc: any, r: any) => {
+              const emoji = r.emoji;
+              if (!acc[emoji]) {
+                acc[emoji] = { emoji, count: 0 };
+              }
+              acc[emoji].count += 1;
+              return acc;
+            }, {});
+
+            const uniqueReactions = Object.values(groupedReactions);
+
+            return (
+              <div
+                className={`absolute -bottom-2 ${
+                  isMe ? "right-2" : "left-2"
+                } bg-background border rounded-full px-2 py-0.5 text-xs shadow flex items-center gap-1 z-10 select-none`}
+              >
+                {uniqueReactions.map((item: any) => (
+                  <span key={item.emoji} className="flex items-center gap-0.5">
+                    <span>{item.emoji}</span>
+                    {item.count > 1 && (
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        {item.count}
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

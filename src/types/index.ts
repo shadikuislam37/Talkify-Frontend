@@ -23,13 +23,14 @@ export interface AuthUser {
   isActiveStatusVisible?: boolean;
   isOnline?: boolean; // 🌟 Prisma Field
   publicKey?: string | null; // 🌟 Prisma Field
+  encryptedPrivateKey?: string | null; // 🌟 PIN দিয়ে এনক্রিপ্টেড প্রাইভেট কি ব্যাকআপ (E2EE)
   fcmToken?: string | null; // 🌟 Prisma Field
   twoFactorEnabled?: boolean | null; // 🌟 Prisma Field
   lastSeen?: string | Date;
   createdAt?: string | Date;
   updatedAt?: string | Date;
 
-  // Relations (অপাওয়ালে ফ্রন্টএন্ডে ইউজার ডিটেইলস হ্যান্ডেল করার জন্য)
+  // Relations (অপাওয়ালে ফ্রন্টএন্ডে ইউজার ডিটেইলস হ্যান্ডেল করার জন্য)
   blockedUsers?: AuthUser[];
   blockedBy?: AuthUser[];
   sentFriendRequests?: FriendRequest[];
@@ -42,7 +43,7 @@ export type UserProfile = AuthUser;
 export type ConversationUser = AuthUser;
 
 // ==========================================
-// ৩. Friend Request Interface (🌟 নতুন মডেল অনুযায়ী)
+// ৩. Friend Request Interface (🌟 নতুন মডেল অনুযায়ী)
 // ==========================================
 export interface FriendRequest {
   id: string;
@@ -80,7 +81,7 @@ export interface MessageRead {
 export interface Message {
   id: string;
   body?: string | null;
-  encryptedKey?: string | null;
+  keys?: { userId: string; encryptedKey: string }[] | null;
   image?: string | null;
   status?: MessageStatus;
   createdAt?: string | Date;
@@ -89,12 +90,9 @@ export interface Message {
   senderId?: string;
   sender?: AuthUser;
 
-  
-
-
   conversationId?: string;
 
-  //file upload feature : 
+  //file upload feature :
   fileUrl?: string | null;
   fileName?: string | null;
   fileType?: string | null;
@@ -116,6 +114,21 @@ export interface Message {
   reactions?: Reaction[];
   reads?: MessageRead[];
   isEdited?: boolean;
+
+  // 🌟 Optimistic UI (client-only fields, backend কখনো এগুলো পাঠায় না) —
+  // temporary id দিয়ে instant bubble দেখানো, ব্যর্থ হলে retry করার জন্য
+  _sendStatus?: "pending" | "failed";
+  _retryPayload?: {
+    conversationId: string;
+    body?: string;
+    image?: string;
+    fileUrl?: string;
+    fileType?: string;
+    fileName?: string;
+    replyToId?: string;
+    members: { id: string; publicKey?: string | null }[];
+    currentUserId: string;
+  };
 }
 
 // ==========================================

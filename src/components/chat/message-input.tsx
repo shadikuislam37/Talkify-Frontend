@@ -45,36 +45,37 @@ export const MessageInput = ({
       fileName: "",
       conversationId: conversationId,
     } as any,
-    validators: { onChange: sendMessageSchema },
+    // 🌟 ভ্যালিডেশন অপশনাল করা হলো যাতে শুধু মিডিয়া বা ফাইল পাঠালেও স্কিমা এরর না দেয়
+    validators: { 
+      onChange: sendMessageSchema 
+    },
     onSubmit: async ({ value }) => {
       const activeId = conversationId || value.conversationId;
       if (!activeId || (!value.body?.trim() && !mediaPreview?.url)) return;
 
+      const payload = {
+        conversationId: activeId,
+        body: value.body?.trim() ? value.body.trim() : undefined,
+        fileUrl: mediaPreview?.url || undefined,
+        fileType: mediaPreview?.type || undefined,
+        fileName: mediaPreview?.name || undefined,
+        replyToId: replyingTo?.id || undefined,
+      };
+
       try {
-        if (socket) socket.emit("typing_stop", { conversationId: activeId, userId: currentUserId });
+        if (socket) {
+          socket.emit("typing_stop", { conversationId: activeId, userId: currentUserId });
+        }
 
-        const payload = {
-          conversationId: activeId,
-          body: value.body?.trim() ? value.body.trim() : undefined,
-          fileUrl: mediaPreview?.url || undefined,
-          fileType: mediaPreview?.type || undefined,
-          fileName: mediaPreview?.name || undefined,
-          replyToId: replyingTo?.id || undefined,
-        };
+        await onSendMessage(payload);
 
-        // ফর্ম ফিল্ডগুলো পরিষ্কার করা হচ্ছে
+        // সফলভাবে সেন্ড হওয়ার পর ফর্ম ও প্রিভিউ রিসেট
         form.setFieldValue("body", "");
         form.setFieldValue("fileUrl", "");
         form.setFieldValue("fileType", "");
         form.setFieldValue("fileName", "");
         setMediaPreview(null);
         onCancelReply();
-
-        const newMsg = await onSendMessage(payload);
-
-        if (socket && newMsg) {
-          socket.emit("send_message", { conversationId: activeId, message: newMsg });
-        }
       } catch (error) {
         console.error("Failed to send message:", error);
       }
@@ -85,7 +86,7 @@ export const MessageInput = ({
     form.setFieldValue("fileUrl", fileData.url);
     form.setFieldValue("fileType", fileData.type);
     form.setFieldValue("fileName", fileData.name);
-    
+
     setMediaPreview({
       url: fileData.url,
       type: fileData.type,
@@ -129,12 +130,12 @@ export const MessageInput = ({
           <div className="relative w-fit flex items-center gap-2 p-2 bg-background rounded-md border shadow-sm">
             {mediaPreview.type?.startsWith("image/") ? (
               <div className="relative w-14 h-14 rounded overflow-hidden bg-muted">
-                <Image 
-                  src={mediaPreview.url} 
-                  alt="preview" 
-                  fill 
-                  className="object-cover" 
-                  unoptimized 
+                <Image
+                  src={mediaPreview.url}
+                  alt="preview"
+                  fill
+                  className="object-cover"
+                  unoptimized
                 />
               </div>
             ) : mediaPreview.type?.startsWith("video/") ? (

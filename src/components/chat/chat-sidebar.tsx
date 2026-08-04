@@ -1,18 +1,19 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useOnlineUsers } from "@/hooks/use-online-users";
 import { Conversation } from "@/types";
 import { formatTime } from "@/lib/utils";
 import { Users } from "lucide-react";
 import { socket } from "@/lib/socket";
+import { decryptMessage } from "@/lib/crypto";
 
 interface ChatSidebarProps {
   conversations: Conversation[];
   activeId: string;
   currentUserId?: string;
   onSelectConversation: (id: string) => void;
+  onlineUsers: Set<string>;
 }
 
 export default function ChatSidebar({
@@ -20,16 +21,69 @@ export default function ChatSidebar({
   activeId,
   currentUserId,
   onSelectConversation,
+  onlineUsers,
 }: ChatSidebarProps) {
-  const onlineUsers = useOnlineUsers();
-  const safeConversations = Array.isArray(conversations) ? conversations : [];
+  const safeConversations = useMemo(() => {
+    return Array.isArray(conversations) ? conversations : [];
+  }, [conversations]);
 
-  // 🌟 ফিক্সড ফাংশন: চ্যাটে ক্লিক করলে সিলেক্ট হবে এবং সকেটের মাধ্যমে মার্ক এজ রিড হবে
+  const [decryptedPreviews, setDecryptedPreviews] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    let isMounted = true;
+
+    async function processSidebarPreviews() {
+      const updates: Record<string, string> = {};
+
+      for (const conv of safeConversations) {
+        const lastMsgObj = conv.messages?.[0];
+        if (!lastMsgObj) continue;
+
+        // ১. যদি মেসেজে বডি না থাকে কিন্তু ছবি বা ফাইল থাকে
+        if (!lastMsgObj.body) {
+          continue;
+        }
+
+        console.log("DEBUG SIDEBAR MESSAGE:", {
+          convId: conv.id,
+          body: lastMsgObj.body,
+          keys: lastMsgObj.keys,
+          currentUserId,
+        });
+        // ২. যদি মেসেজটি এনক্রিপ্টেড হয় (যাতে JSON অবজেক্ট বা iv স্ট্রিং সরাসরি না দেখায়)
+        if (lastMsgObj.keys && lastMsgObj.keys.length > 0) {
+          try {
+            // চ্যাটবক্সের মতো হুবহু একই লজিক দিয়ে ডিক্রিপ্ট করা হচ্ছে
+            const plainText = await decryptMessage(lastMsgObj.body, lastMsgObj.keys, currentUserId);
+            if (plainText) {
+              updates[conv.id] = plainText;
+            }
+          } catch (error) {
+            // ডিবাগিং মোড: ডিক্রিপশনে কেন ফেল করছে কনসোলে ট্র্যাক করবে কিন্তু UI নষ্ট করবে না
+            console.error(`Sidebar decryption error for conv ${conv.id}:`, error);
+          }
+        } else {
+          // যদি এনক্রিপ্টেড না হয়ে সাধারণ টেক্সট হয়
+          updates[conv.id] = lastMsgObj.body;
+        }
+      }
+
+      if (isMounted && Object.keys(updates).length > 0) {
+        setDecryptedPreviews((prev) => ({ ...prev, ...updates }));
+      }
+    }
+
+    processSidebarPreviews();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [safeConversations, currentUserId]);
+
   const handleConversationClick = async (convId: string, unreadCount: number) => {
-    // ১. প্রথমে চ্যাট সিলেক্ট করে UI আপডেট করুন
     onSelectConversation(convId);
 
-    // ২. যদি আনরিড মেসেজ থাকে, তবে সকেট ইভেন্ট পাঠান
     if (socket && socket.connected && unreadCount > 0) {
       try {
         socket.emit("mark_conversation_as_read", { conversationId: convId });
@@ -67,29 +121,52 @@ export default function ChatSidebar({
               const senderName = isMyMessage ? "You" : lastMsgObj.sender?.name || "Someone";
               const isDeleted = !lastMsgObj.body && !lastMsgObj.image && !lastMsgObj.fileUrl;
 
+              const reactions = lastMsgObj.reactions || [];
+              const latestReaction = reactions.length > 0 ? reactions[reactions.length - 1] : null;
+
               if (isDeleted) {
                 lastMessageText = conv.isGroup
                   ? `${senderName} deleted a message`
                   : isMyMessage ? "You deleted a message" : `${chatName} deleted a message`;
+              } else if (latestReaction) {
+                const isMyReaction = latestReaction.userId === currentUserId;
+                const reactorName = isMyReaction ? "You" : chatName.split(" ")[0];
+                lastMessageText = `${reactorName} reacted: ${latestReaction.emoji}`;
               } else {
-                const content = lastMsgObj.body || (lastMsgObj.image ? "📷 Photo" : lastMsgObj.fileUrl ? "📁 Attachment" : "");
-                lastMessageText = conv.isGroup ? `${senderName}: ${content}` : content;
+                // স্টেট থেকে সঠিক ডিক্রিপ্টেড টেক্সট নেওয়া হচ্ছে
+                const decryptedText = decryptedPreviews[conv.id];
+                const rawBody = lastMsgObj.body;
+
+                // সুনিশ্চিত করা হচ্ছে যেন কোনো অবস্থাতেই র এনক্রিপ্টেড জেসন বা iv স্ট্রিং স্ক্রিনে না আসে
+                let textContent = "";
+                if (decryptedText && !decryptedText.startsWith("{")) {
+                  textContent = decryptedText;
+                } else if (rawBody && !rawBody.trim().startsWith("{")) {
+                  textContent = rawBody;
+                } else if (lastMsgObj.image) {
+                  textContent = "📷 Photo";
+                } else if (lastMsgObj.fileUrl) {
+                  textContent = "📁 Attachment";
+                } else {
+                  textContent = "New message";
+                }
+
+                lastMessageText = conv.isGroup ? `${senderName}: ${textContent}` : textContent;
               }
             }
 
             const unreadCount = conv.unreadCount || 0;
 
             return (
-              <button
+              <div
                 key={conv.id}
                 onClick={() => handleConversationClick(conv.id, unreadCount)}
-                className={`w-full text-left p-2.5 rounded-lg transition-all flex items-center gap-3 relative ${
+                className={`w-full text-left p-2.5 rounded-lg transition-all flex items-center gap-3 relative cursor-pointer ${
                   activeId === conv.id
                     ? "bg-muted font-medium"
                     : "hover:bg-muted/50"
                 }`}
               >
-                {/* Avatar with Online Status Indicator */}
                 <div className="relative">
                   <Avatar className="h-10 w-10">
                     {avatarImage && <AvatarImage src={avatarImage} alt={chatName} />}
@@ -109,7 +186,6 @@ export default function ChatSidebar({
                   )}
                 </div>
 
-                {/* Chat Name & Message Preview */}
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-baseline mb-0.5">
                     <p className={`text-sm truncate ${unreadCount > 0 ? "font-bold text-foreground" : "font-semibold"}`}>
@@ -133,7 +209,6 @@ export default function ChatSidebar({
                       {lastMessageText}
                     </p>
 
-                    {/* আনরেড কাউন্ট ব্যাজ */}
                     {unreadCount > 0 && (
                       <span className="bg-primary text-primary-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 min-w-[18px] text-center">
                         {unreadCount}
@@ -141,7 +216,7 @@ export default function ChatSidebar({
                     )}
                   </div>
                 </div>
-              </button>
+              </div>
             );
           })
         )}

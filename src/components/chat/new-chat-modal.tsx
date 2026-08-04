@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useMessage } from "@/hooks/use-messages";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +17,7 @@ import { useCreateOrGetOneToOne } from "@/hooks/use-conversations";
 
 interface NewChatModalProps {
   onSelectConversation?: (conversationId: string) => void;
-  currentUserId?: string; // 🌟 নিজের আইডি ফিল্টার করার জন্য
+  currentUserId?: string;
 }
 
 export default function NewChatModal({
@@ -35,13 +34,12 @@ export default function NewChatModal({
     try {
       const response: any = await createChat(user.id);
       
-      // ব্যাকএন্ড response.data অথবা response সরাসরি পাঠাতে পারে
-      const conversationId = response?.id || response?.data?.id;
+      // 🌟 বিভিন্ন ফরম্যাট থেকে সেফলি কনভার্সেশন আইডি এক্সট্রাক্ট করা
+      const conversationId = response?.id || response?.data?.id || response?.conversation?.id;
 
-      // 🌟 ১. ইনবক্স চ্যাট লিস্ট রিফ্রেশ করা (Invalidation)
+      // লিস্ট রিফ্রেশ করা
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
 
-      // 🌟 ২. অ্যাক্টিভ চ্যাট সিলেক্ট করা
       if (conversationId && onSelectConversation) {
         onSelectConversation(conversationId);
       }
@@ -65,12 +63,11 @@ export default function NewChatModal({
           <DialogTitle>Start New Conversation</DialogTitle>
         </DialogHeader>
 
-        {/* 🌟 আলাদা UserSearch কম্পোনেন্ট ব্যবহার করা হলো */}
         <UserSearch
           onSelectUser={handleUserSelect}
           isLoadingAction={isCreating}
           excludeUserIds={currentUserId ? [currentUserId] : []}
-          placeholder="Search user by name or email..."
+          placeholder="Search user by name..."
         />
       </DialogContent>
     </Dialog>
