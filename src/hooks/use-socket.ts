@@ -41,22 +41,26 @@ export function useSocket(
 
     // 🌟 ১. রিয়েল-টাইম নতুন মেসেজ হ্যান্ডলার
     const handleReceiveMessage = (newMessage: Message) => {
-      const isMyMessage = String(newMessage.senderId || newMessage.sender?.id) === String(currentUserId);
+  const isMyMessage = String(newMessage.senderId || newMessage.sender?.id) === String(currentUserId);
 
-      if (!isMyMessage) {
-        playNotificationSound();
-        sendPushNotification(
-          newMessage.sender?.name || "New Message",
-          newMessage.body || "Sent an attachment"
-        );
+  if (!isMyMessage) {
+    playNotificationSound();
+    // 🌟 ফিক্স: keys আর currentUserId পাস করা হলো, যাতে sendPushNotification
+    // ভেতরে decryptMessage() ঠিকভাবে চালাতে পারে এবং আসল টেক্সট দেখাতে পারে
+    sendPushNotification(
+      newMessage.sender?.name || "New Message",
+      newMessage.body || "Sent an attachment",
+      newMessage.keys ?? undefined,
+      currentUserId
+    );
 
-        if (conversationId && newMessage.conversationId === conversationId) {
-          socket.emit("mark_message_as_read", {
-            messageId: newMessage.id,
-            conversationId: newMessage.conversationId,
-          });
-        }
-      }
+    if (conversationId && newMessage.conversationId === conversationId) {
+      socket.emit("mark_message_as_read", {
+        messageId: newMessage.id,
+        conversationId: newMessage.conversationId,
+      });
+    }
+  }
 
    queryClient.setQueryData(["messages", newMessage.conversationId], (oldData: any) => {
   // 🌟 যদি আগে কোনো মেসেজ না থাকে (Empty Chat), তবে নতুন অ্যারে তৈরি করে দিন
@@ -95,7 +99,7 @@ export function useSocket(
                   (r: any) => String(r.userId) === String(data.reaction.userId)
                 );
 
-                let updatedReactions = [...currentReactions];
+                const updatedReactions = [...currentReactions];
                 if (existingIndex > -1) {
                   if (!data.reaction.emoji) {
                     updatedReactions.splice(existingIndex, 1);

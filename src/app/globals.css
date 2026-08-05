@@ -127,4 +127,22 @@
   html {
     @apply font-sans;
   }
+
+  /* 🌟 নতুন: html/body-কে পুরো viewport height-এ fix করা, বাইরের কোনো
+     page-level scroll না হয় — ChatLayout-এর নিজস্ব internal scroll area-ই
+     একমাত্র scrollable জায়গা থাকবে */
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  /* 🌟 নতুন: dvh fallback সহ height ইউটিলিটি — পুরনো ব্রাউজারে সাধারণ vh,
+     আধুনিক/মোবাইল ব্রাউজারে dvh (dynamic viewport height) ব্যবহার হবে,
+     address bar show/hide হলেও লেআউট আর ভাঙবে না */
+  .h-app-screen {
+    height: 100vh;
+    height: 100dvh;
+  }
 }

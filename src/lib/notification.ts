@@ -22,10 +22,10 @@ export const requestNotificationPermission = async () => {
   try {
     if ("Notification" in window) {
       const permission = await Notification.requestPermission();
-      
+
       if (permission === "granted") {
         const messaging = await getClientMessaging();
-        
+
         if (!messaging) {
           console.warn("Firebase Messaging is not supported in this browser.");
           return;
@@ -48,14 +48,25 @@ export const requestNotificationPermission = async () => {
 };
 
 // ৩. লোকাল পুশ নোটিফিকেশন দেখানো (এনক্রিপ্টেড টেক্সট ফিক্স সহ)
-export const sendPushNotification = async (title: string, body: string, keys?: any[], currentUserId?: string) => {
+export const sendPushNotification = async (
+  title: string,
+  body: string,
+ keys?: { userId: string; encryptedKey: string }[] | null,
+  currentUserId?: string,
+) => {
   if (typeof window === "undefined") return;
 
   let displayBody = body;
 
   try {
     // যদি বডিটি এনক্রিপ্টেড জেসন বা সিপার্থটেক্সট হয় এবং ডিক্রিপ্ট করার মতো keys ও currentUserId থাকে
-    if (body && body.trim().startsWith("{") && keys && keys.length > 0 && currentUserId) {
+    if (
+      body &&
+      body.trim().startsWith("{") &&
+      keys &&
+      keys.length > 0 &&
+      currentUserId
+    ) {
       try {
         const decrypted = await decryptMessage(body, keys, currentUserId);
         if (decrypted && !decrypted.startsWith("{")) {
@@ -77,7 +88,7 @@ export const sendPushNotification = async (title: string, body: string, keys?: a
   if ("Notification" in window && Notification.permission === "granted") {
     new Notification(title, {
       body: displayBody,
-      icon: "/icon.svg", 
+      icon: "/icon.svg",
     });
   }
 };

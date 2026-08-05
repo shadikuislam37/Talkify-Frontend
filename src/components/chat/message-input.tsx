@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useForm } from "@tanstack/react-form";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2, Send, X, FileText, Film, Music } from "lucide-react";
 import { sendMessageSchema } from "@/schemas/chat.schema";
@@ -21,6 +20,8 @@ interface MessageInputProps {
   onTyping: (text: string) => void;
 }
 
+const MAX_TEXTAREA_HEIGHT = 120; // px — এর বেশি বড় হলে ভেতরে scroll হবে
+
 export const MessageInput = ({
   conversationId,
   currentUserId,
@@ -37,6 +38,8 @@ export const MessageInput = ({
     name: string;
   } | null>(null);
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const form = useForm({
     defaultValues: {
       body: "",
@@ -45,9 +48,8 @@ export const MessageInput = ({
       fileName: "",
       conversationId: conversationId,
     } as any,
-    // 🌟 ভ্যালিডেশন অপশনাল করা হলো যাতে শুধু মিডিয়া বা ফাইল পাঠালেও স্কিমা এরর না দেয়
-    validators: { 
-      onChange: sendMessageSchema 
+    validators: {
+      onChange: sendMessageSchema,
     },
     onSubmit: async ({ value }) => {
       const activeId = conversationId || value.conversationId;
@@ -69,18 +71,28 @@ export const MessageInput = ({
 
         await onSendMessage(payload);
 
-        // সফলভাবে সেন্ড হওয়ার পর ফর্ম ও প্রিভিউ রিসেট
         form.setFieldValue("body", "");
         form.setFieldValue("fileUrl", "");
         form.setFieldValue("fileType", "");
         form.setFieldValue("fileName", "");
         setMediaPreview(null);
         onCancelReply();
+
+        // 🌟 সেন্ড হওয়ার পর textarea-র height আবার ডিফল্টে রিসেট করা
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "auto";
+        }
       } catch (error) {
         console.error("Failed to send message:", error);
       }
     },
   });
+
+  // 🌟 টাইপ করার সময় textarea-র height content অনুযায়ী বাড়ে, MAX_TEXTAREA_HEIGHT পর্যন্ত
+  const autoResize = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
+  };
 
   const handleUploadComplete = (fileData: { url: string; name: string; type: string }) => {
     form.setFieldValue("fileUrl", fileData.url);
@@ -105,9 +117,9 @@ export const MessageInput = ({
     <div className="flex flex-col border-t bg-background shrink-0 mt-auto">
       {/* Reply Preview Bar */}
       {replyingTo && (
-        <div className="flex items-center justify-between p-2 bg-muted/80 border-b text-xs">
-          <div className="truncate pr-2">
-            <span className="font-bold text-primary block">
+        <div className="flex items-center justify-between gap-2 p-2 bg-muted/80 border-b text-xs">
+          <div className="truncate pr-2 min-w-0 flex-1">
+            <span className="font-bold text-primary block truncate">
               Replying to {replyingTo.senderId === currentUserId ? "yourself" : replyingTo.sender?.name || "user"}
             </span>
             <span className="text-muted-foreground truncate block">{replyingTo.body || "Attachment"}</span>
@@ -117,7 +129,7 @@ export const MessageInput = ({
             variant="ghost"
             size="icon"
             onClick={onCancelReply}
-            className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
+            className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground shrink-0"
           >
             <X className="h-3.5 w-3.5" />
           </Button>
@@ -127,31 +139,32 @@ export const MessageInput = ({
       {/* Media Preview Box */}
       {mediaPreview && mediaPreview.url && (
         <div className="p-2 border-b bg-muted/40">
-          <div className="relative w-fit flex items-center gap-2 p-2 bg-background rounded-md border shadow-sm">
+          <div className="relative w-fit max-w-full flex items-center gap-2 p-2 bg-background rounded-md border shadow-sm">
             {mediaPreview.type?.startsWith("image/") ? (
-              <div className="relative w-14 h-14 rounded overflow-hidden bg-muted">
+              <div className="relative w-14 h-14 rounded overflow-hidden bg-muted shrink-0">
                 <Image
                   src={mediaPreview.url}
                   alt="preview"
                   fill
+                  sizes="56px"
                   className="object-cover"
                   unoptimized
                 />
               </div>
             ) : mediaPreview.type?.startsWith("video/") ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground p-1">
-                <Film className="h-4 w-4 text-primary" />
-                <span className="max-w-[150px] truncate">{mediaPreview.name}</span>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground p-1 min-w-0">
+                <Film className="h-4 w-4 text-primary shrink-0" />
+                <span className="max-w-[45vw] sm:max-w-[150px] truncate">{mediaPreview.name}</span>
               </div>
             ) : mediaPreview.type?.startsWith("audio/") ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground p-1">
-                <Music className="h-4 w-4 text-primary" />
-                <span className="max-w-[150px] truncate">{mediaPreview.name}</span>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground p-1 min-w-0">
+                <Music className="h-4 w-4 text-primary shrink-0" />
+                <span className="max-w-[45vw] sm:max-w-[150px] truncate">{mediaPreview.name}</span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground p-1">
-                <FileText className="h-4 w-4 text-primary" />
-                <span className="max-w-[150px] truncate">{mediaPreview.name}</span>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground p-1 min-w-0">
+                <FileText className="h-4 w-4 text-primary shrink-0" />
+                <span className="max-w-[45vw] sm:max-w-[150px] truncate">{mediaPreview.name}</span>
               </div>
             )}
 
@@ -159,7 +172,7 @@ export const MessageInput = ({
               type="button"
               variant="destructive"
               size="icon"
-              className="h-5 w-5 rounded-full absolute -top-2 -right-2 shadow"
+              className="h-5 w-5 rounded-full absolute -top-2 -right-2 shadow shrink-0"
               onClick={handleRemoveMedia}
             >
               <X className="h-3 w-3" />
@@ -168,40 +181,54 @@ export const MessageInput = ({
         </div>
       )}
 
-      {/* Main Input Form */}
+      {/* Main Input Form — 🌟 items-end যাতে textarea বড় হলে বাটনগুলো নিচেই স্থির থাকে */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
           e.stopPropagation();
           form.handleSubmit();
         }}
-        className="flex gap-2 items-center p-4"
+        className="flex gap-1.5 sm:gap-2 items-end p-2 sm:p-4"
       >
-        <MediaUploadButton onUploadComplete={handleUploadComplete} />
+        <div className="shrink-0 pb-1">
+          <MediaUploadButton onUploadComplete={handleUploadComplete} />
+        </div>
 
         <form.Field name="body">
           {(field) => (
-            <div className="flex-1">
-              <Input
+            <div className="flex-1 min-w-0">
+              <textarea
+                ref={textareaRef}
                 name={field.name}
                 value={field.state.value || ""}
+                rows={1}
                 onChange={(e) => {
                   field.handleChange(e.target.value);
                   onTyping(e.target.value);
+                  autoResize(e.target);
+                }}
+                onKeyDown={(e) => {
+                  // 🌟 Enter = সেন্ড, Shift+Enter = নতুন লাইন
+                  // isComposing চেক করা হলো যাতে বাংলা/অন্য IME দিয়ে টাইপ করার
+                  // সময় Enter চাপলে অনিচ্ছাকৃতভাবে সেন্ড না হয়ে যায়
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    if (field.state.value?.trim() || mediaPreview) {
+                      form.handleSubmit();
+                    }
+                  }
                 }}
                 onBlur={field.handleBlur}
                 placeholder="Type a message..."
                 autoComplete="off"
                 disabled={isSending}
-                className="h-10"
+                className="w-full resize-none overflow-y-auto min-h-[40px] max-h-[120px] rounded-md border border-input bg-background px-3 py-2.5 text-sm leading-5 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
             </div>
           )}
         </form.Field>
 
-        <form.Subscribe
-          selector={(state) => [state.values.body, mediaPreview]}
-        >
+        <form.Subscribe selector={(state) => [state.values.body, mediaPreview]}>
           {([body, preview]) => (
             <Button
               type="submit"

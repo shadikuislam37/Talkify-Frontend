@@ -112,7 +112,7 @@ export const useSendMessage = () => {
         fileName,
         replyToId,
       });
-      return response;
+      return response.data; 
     },
 
     // 🌟 নতুন: Optimistic UI — REST কল শেষ হওয়ার জন্য অপেক্ষা না করে সাথে সাথেই

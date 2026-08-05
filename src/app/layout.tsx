@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import QueryProvider from "@/providers/query-provider";
+import { ThemeProvider } from "@/providers/theme-provider";
 
 const inter = Inter({ 
   subsets: ["latin"], 
@@ -26,13 +27,21 @@ export default function RootLayout({
       className={cn("h-full", "antialiased", inter.variable)}
     >
       <body className={cn(
-        "min-h-full flex flex-col bg-background text-foreground font-sans selection:bg-primary selection:text-primary-foreground",
+        "h-full flex flex-col overflow-hidden bg-background text-foreground font-sans selection:bg-primary selection:text-primary-foreground",
         "subpixel-antialiased"
       )}>
-        <QueryProvider>
-          {children}
-       
-        </QueryProvider>
+        {/* 🌟 নতুন: ThemeProvider — attribute="class" মানে <html> ট্যাগে "dark" class
+            টগল হবে, যেটা আপনার globals.css-এর .dark সিলেক্টরের সাথে ম্যাচ করে */}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <QueryProvider>
+            {children}
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

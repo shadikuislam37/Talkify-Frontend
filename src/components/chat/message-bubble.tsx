@@ -3,8 +3,9 @@
 import { useReactionStore } from "@/store/use-reaction-store";
 import React, { useState, useRef, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, CheckCheck, CornerUpLeft, Edit2, Reply, Smile, Trash2, Loader2, AlertCircle, RotateCw } from "lucide-react";
+import { Check, CheckCheck, CornerUpLeft, Edit2, Reply, Smile, Trash2, Loader2, AlertCircle, RotateCw, X } from "lucide-react";
 import { Message } from "@/types";
 import { formatTime } from "@/lib/utils";
 import { decryptMessage } from "@/lib/crypto";
@@ -53,11 +54,14 @@ export function MessageBubble({
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [actionsVisible, setActionsVisible] = useState(false);
 
-  // 🌟 মেইন মেসেজ ডিক্রিপ্ট করার লোকাল স্টেট
+  // মেইন মেসেজ ডিক্রিপ্ট করার লোকাল স্টেট
   const [displayBody, setDisplayBody] = useState<string>(msg.body || "");
-  
-  // 🌟 রিপ্লাই প্রিভিউ মেসেজ ডিক্রিপ্ট করার লোকাল স্টেট
+
+  // রিপ্লাই প্রিভিউ মেসেজ ডিক্রিপ্ট করার লোকাল স্টেট
   const [replyDisplayBody, setReplyDisplayBody] = useState<string>("");
+
+  // ইমেজ লাইটবক্স প্রিভিউ-এর জন্য স্টেট
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -151,8 +155,8 @@ export function MessageBubble({
           }}
           className="flex items-center gap-1 text-[11px] text-muted-foreground mb-0.5 cursor-pointer hover:underline px-1"
         >
-          <CornerUpLeft className="h-3 w-3" />
-          <span>
+          <CornerUpLeft className="h-3 w-3 shrink-0" />
+          <span className="truncate">
             <strong className="font-semibold text-foreground">
               {isMe ? "You" : msg.sender?.name || "User"}
             </strong>{" "}
@@ -164,9 +168,11 @@ export function MessageBubble({
         </div>
       )}
 
-      <div className={`flex items-end gap-2 w-full ${isMe ? "justify-end" : "justify-start"}`}>
+      {/* min-w-0 — flex row-কে শ্রিঙ্ক করার অনুমতি দিতে, নাহলে fixed-width attachment
+          বাবলকে ভেঙে/ওভারফ্লো করে বের করে দিত মোবাইলে */}
+      <div className={`flex items-end gap-2 w-full min-w-0 ${isMe ? "justify-end" : "justify-start"}`}>
         {!isMe && (
-          <Avatar className="h-8 w-8 mb-1">
+          <Avatar className="h-8 w-8 mb-1 shrink-0">
             <AvatarImage src={msg.sender?.image || undefined} />
             <AvatarFallback className="text-xs font-semibold">
               {msg.sender?.name ? msg.sender.name.slice(0, 2).toUpperCase() : "U"}
@@ -178,7 +184,7 @@ export function MessageBubble({
           <div
             className={`${
               actionsVisible ? "flex" : "hidden group-hover:flex"
-            } items-center gap-1 ${isMe ? "order-first" : "order-last"}`}
+            } items-center gap-1 shrink-0 ${isMe ? "order-first" : "order-last"}`}
           >
             {onReaction && (
               <div className="relative">
@@ -196,7 +202,11 @@ export function MessageBubble({
                 </div>
 
                 {showReactionPicker && (
-                  <div className={`absolute bottom-full mb-1 z-50 flex items-center gap-1.5 p-1.5 rounded-full shadow-lg bg-background border ${isMe ? "right-0" : "left-0"}`}>
+                  <div
+                    className={`absolute bottom-full mb-1 z-50 flex items-center gap-1.5 p-1.5 rounded-full shadow-lg bg-background border max-w-[90vw] overflow-x-auto ${
+                      isMe ? "right-0" : "left-0"
+                    }`}
+                  >
                     {EMOJIS.map((emoji) => (
                       <button
                         key={emoji}
@@ -206,7 +216,7 @@ export function MessageBubble({
                           onReaction(msg.id, emoji);
                           setShowReactionPicker(false);
                         }}
-                        className="hover:bg-muted p-1.5 rounded-full text-base transition-transform hover:scale-125 active:scale-110 focus:outline-none cursor-pointer"
+                        className="hover:bg-muted p-1.5 rounded-full text-base transition-transform hover:scale-125 active:scale-110 focus:outline-none cursor-pointer shrink-0"
                       >
                         {emoji}
                       </button>
@@ -294,9 +304,9 @@ export function MessageBubble({
           </div>
         )}
 
-        <div className="flex flex-col max-w-[70%] relative">
+        <div className="flex flex-col max-w-[78%] sm:max-w-[70%] min-w-0 relative">
           {isGroup && !isMe && msg.sender?.name && (
-            <span className="text-[11px] font-semibold text-primary mb-0.5 ml-1">
+            <span className="text-[11px] font-semibold text-primary mb-0.5 ml-1 truncate">
               {msg.sender.name}
             </span>
           )}
@@ -307,7 +317,7 @@ export function MessageBubble({
             onMouseDown={handleTouchStart}
             onMouseUp={handleTouchEnd}
             onMouseLeave={handleTouchEnd}
-            className={`p-2.5 rounded-2xl border space-y-1 relative ${
+            className={`p-2.5 rounded-2xl border space-y-1 relative min-w-0 ${
               isMe
                 ? "bg-primary text-primary-foreground rounded-br-none self-end"
                 : "bg-muted/50 rounded-bl-none self-start"
@@ -315,7 +325,7 @@ export function MessageBubble({
               isPending ? "opacity-60" : ""
             } ${isFailed ? "ring-1 ring-red-400" : ""}`}
           >
-            {/* 🌟 বাবলের ভেতরের রিপ্লাই প্রিভিউ বক্স (ডিক্রিপ্ট করা টেক্সট সহ) */}
+            {/* বাবলের ভেতরের রিপ্লাই প্রিভিউ বক্স */}
             {!isDeleted && msg.replyTo && (
               <div
                 onClick={(e) => {
@@ -341,13 +351,20 @@ export function MessageBubble({
               </p>
             ) : (
               <>
+                {/* msg.image — ক্লিক করলে লাইটবক্স খোলে */}
                 {msg.image && !msg.fileUrl && (
-                  <div className="relative w-full min-w-[200px] h-48 mb-1 rounded-md overflow-hidden bg-muted/20">
+                  <div
+                    className="relative w-full aspect-[4/3] max-h-64 mb-1 rounded-md overflow-hidden bg-muted/20 cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewSrc(msg.image!);
+                    }}
+                  >
                     <Image
                       src={msg.image}
                       alt="Attachment"
                       fill
-                      sizes="(max-width: 768px) 100vw, 260px"
+                      sizes="(max-width: 640px) 70vw, 260px"
                       className="object-cover rounded-md"
                       unoptimized
                     />
@@ -357,30 +374,42 @@ export function MessageBubble({
                 {msg.fileUrl && (
                   <div className="mt-1">
                     {msg.fileType?.startsWith("image/") || (msg.image && msg.fileUrl) ? (
-                      <div className="relative w-64 h-48 max-w-xs rounded-lg overflow-hidden">
+                      // fileUrl image — ক্লিক করলে লাইটবক্স খোলে
+                      <div
+                        className="relative w-full max-w-[240px] aspect-[4/3] rounded-lg overflow-hidden cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPreviewSrc(msg.fileUrl || msg.image || "");
+                        }}
+                      >
                         <Image
                           src={msg.fileUrl || msg.image!}
                           alt="attachment"
                           fill
-                          sizes="(max-width: 768px) 100vw, 256px"
+                          sizes="(max-width: 640px) 65vw, 240px"
                           className="object-cover"
                           unoptimized
                         />
                       </div>
                     ) : (
-                      <a
+                      // 🌟 ফিক্স: <a> এর বদলে next/link এর Link কম্পোনেন্ট।
+                      // prefetch={false} দেওয়া হলো কারণ এটা কোনো internal app route না,
+                      // বরং external/dynamic file URL — prefetch করার দরকার নেই এবং
+                      // অপ্রয়োজনীয় console warning এড়াতে এটা বন্ধ রাখা ভালো প্র্যাক্টিস।
+                      <Link
                         href={msg.fileUrl}
                         target="_blank"
                         rel="noopener noreferrer"
+                        prefetch={false}
                         onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-3 p-3 bg-muted/60 rounded-xl border hover:bg-muted transition"
+                        className="flex items-center gap-3 p-3 bg-muted/60 rounded-xl border hover:bg-muted transition min-w-0"
                       >
-                        <span className="text-2xl">📄</span>
-                        <div className="overflow-hidden">
+                        <span className="text-2xl shrink-0">📄</span>
+                        <div className="overflow-hidden min-w-0 flex-1">
                           <p className="text-xs font-semibold truncate">{msg.fileName || "Attachment"}</p>
                           <span className="text-[10px] text-muted-foreground uppercase">{msg.fileType?.split("/")[1] || "FILE"}</span>
                         </div>
-                      </a>
+                      </Link>
                     )}
                   </div>
                 )}
@@ -432,7 +461,7 @@ export function MessageBubble({
             </button>
           )}
 
-          {/* রিয়্যাকশন গ্রুপিং ও কাউন্ট */}
+          {/* রিয়্যাকশন গ্রুপিং ও কাউন্ট */}
           {!isDeleted && currentReactions.length > 0 && (() => {
             const groupedReactions = currentReactions.reduce((acc: any, r: any) => {
               const emoji = r.emoji;
@@ -466,6 +495,40 @@ export function MessageBubble({
           })()}
         </div>
       </div>
+
+      {/* ইমেজ লাইটবক্স — attachment-এ ক্লিক করলে ফুল-স্ক্রিন প্রিভিউ খোলে */}
+      {previewSrc && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setPreviewSrc(null)}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPreviewSrc(null);
+            }}
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            title="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+          <div
+            className="relative w-full h-full max-w-4xl max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Image
+              src={previewSrc}
+              alt="Preview"
+              fill
+              sizes="100vw"
+              className="object-contain"
+              unoptimized
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

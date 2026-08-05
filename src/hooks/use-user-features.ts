@@ -24,7 +24,7 @@ export const useUpdateProfile = () => {
       return res;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user-profile"] });
+       queryClient.invalidateQueries({ queryKey: ["me"] }); // 🌟 ফিক্স
     },
   });
 };
@@ -38,7 +38,7 @@ export const useToggleActiveStatus = () => {
       return res;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user-profile"] });
+       queryClient.invalidateQueries({ queryKey: ["me"] }); // 🌟 ফিক্স
     },
   });
 };

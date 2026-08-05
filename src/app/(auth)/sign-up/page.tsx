@@ -9,7 +9,7 @@ import { signUp, emailOTP } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, KeyRound, ArrowLeft } from "lucide-react";
+import { Loader2, KeyRound, ArrowLeft, Eye, EyeOff } from "lucide-react";
 
 // 🌟 এরর মেসেজ দেখানোর জন্য ছোট রি-ইউজেবল কম্পোনেন্ট
 const FieldError = ({ errors }: { errors: unknown[] }) => {
@@ -29,26 +29,34 @@ export default function SignUpPage() {
   const [step, setStep] = useState<"FORM" | "OTP">("FORM");
   const [errorMsg, setErrorMsg] = useState("");
   const [userEmail, setUserEmail] = useState("");
-  
+
   // 🌟 OTP স্ক্রিনের জন্য স্টেট
   const [otp, setOtp] = useState("");
   const [verifyingOtp, setVerifyingOtp] = useState(false);
 
+  // 🌟 পাসওয়ার্ড শো/হাইড টগল করার স্টেট (দুটো ফিল্ডের জন্য আলাদা)
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const router = useRouter();
 
   // 🌟 Step 1: SignUp Form (TanStack Form)
+  // confirmPassword এখন signUpSchema-র .refine() দিয়েই ভ্যালিডেট হয়,
+  // তাই আলাদা local state/manual check-এর দরকার নেই
   const form = useForm({
     defaultValues: {
       name: "",
       phone: "",
       email: "",
       password: "",
+      confirmPassword: "",
     } as SignUpInput,
     validators: {
       onChange: signUpSchema,
     },
     onSubmit: async ({ value }) => {
       setErrorMsg("");
+
       try {
         const payload = {
           email: value.email,
@@ -57,7 +65,7 @@ export default function SignUpPage() {
           phone: value.phone.trim(),
         };
 
-        // ১. একাউন্ট ক্রিয়েট করা
+        // ১. একাউন্ট ক্রিয়েট করা
         const { error } = await signUp.email(payload);
 
         if (error) {
@@ -239,20 +247,61 @@ export default function SignUpPage() {
           )}
         </form.Field>
 
-        {/* Password */}
+        {/* Password — eye icon টগল সহ */}
         <form.Field name="password">
           {(field) => (
             <div className="space-y-2">
               <Label htmlFor={field.name}>Password</Label>
-              <Input
-                id={field.name}
-                type="password"
-                placeholder="••••••••"
-                value={field.state.value || ""}
-                onBlur={field.handleBlur}
-                onChange={(e) => field.handleChange(e.target.value)}
-                className="h-11"
-              />
+              <div className="relative">
+                <Input
+                  id={field.name}
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={field.state.value || ""}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  className="h-11 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  tabIndex={-1}
+                  className="absolute right-0 top-0 h-11 w-10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <FieldError errors={field.state.meta.errors} />
+            </div>
+          )}
+        </form.Field>
+
+        {/* Confirm Password — eye icon টগল সহ, schema-র .refine() দিয়ে ভ্যালিডেটেড */}
+        <form.Field name="confirmPassword">
+          {(field) => (
+            <div className="space-y-2">
+              <Label htmlFor={field.name}>Confirm Password</Label>
+              <div className="relative">
+                <Input
+                  id={field.name}
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={field.state.value || ""}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  className="h-11 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  tabIndex={-1}
+                  className="absolute right-0 top-0 h-11 w-10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  title={showConfirmPassword ? "Hide password" : "Show password"}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               <FieldError errors={field.state.meta.errors} />
             </div>
           )}

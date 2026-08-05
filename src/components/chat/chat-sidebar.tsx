@@ -131,7 +131,7 @@ export default function ChatSidebar({
               } else if (latestReaction) {
                 const isMyReaction = latestReaction.userId === currentUserId;
                 const reactorName = isMyReaction ? "You" : chatName.split(" ")[0];
-                lastMessageText = `${reactorName} reacted: ${latestReaction.emoji}`;
+                lastMessageText = `${reactorName} reacted ${latestReaction.emoji} to this message`;
               } else {
                 // স্টেট থেকে সঠিক ডিক্রিপ্টেড টেক্সট নেওয়া হচ্ছে
                 const decryptedText = decryptedPreviews[conv.id];

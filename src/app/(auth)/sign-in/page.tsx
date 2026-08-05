@@ -9,7 +9,7 @@ import { signIn, authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldCheck, ArrowLeft, RefreshCw } from "lucide-react";
+import { Loader2, ShieldCheck, ArrowLeft, RefreshCw, Eye, EyeOff } from "lucide-react";
 import { useAuthStore } from "@/store/use-auth-store";
 
 // 🌟 Reusable Field Error Component
@@ -35,6 +35,9 @@ export default function SignInPage() {
   const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [resendingOtp, setResendingOtp] = useState(false);
 
+  // 🌟 পাসওয়ার্ড শো/হাইড টগল করার স্টেট
+  const [showPassword, setShowPassword] = useState(false);
+
   const setUser = useAuthStore((state) => state.setUser);
 
   // 🌟 Step 1: Sign-In Form (TanStack Form)
@@ -59,7 +62,7 @@ export default function SignInPage() {
           return;
         }
 
-        // 🌟 যদি ব্যাকএন্ড থেকে ২FA/OTP ট্রিগার করা হয়ে থাকে
+        // 🌟 যদি ব্যাকএন্ড থেকে ২FA/OTP ট্রিগার করা হয়ে থাকে
         if ((data as unknown as { twoFactorRedirect?: boolean })?.twoFactorRedirect) {
           setUserEmail(value.email);
           
@@ -248,7 +251,7 @@ export default function SignInPage() {
           )}
         </form.Field>
 
-        {/* Password */}
+        {/* Password — 🌟 eye icon টগল যোগ হলো */}
         <form.Field name="password">
           {(field) => (
             <div className="space-y-2">
@@ -261,15 +264,26 @@ export default function SignInPage() {
                   Forgot password?
                 </Link>
               </div>
-              <Input
-                id={field.name}
-                type="password"
-                placeholder="••••••••"
-                value={field.state.value || ""}
-                onBlur={field.handleBlur}
-                onChange={(e) => field.handleChange(e.target.value)}
-                className="h-11"
-              />
+              <div className="relative">
+                <Input
+                  id={field.name}
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={field.state.value || ""}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  className="h-11 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  tabIndex={-1}
+                  className="absolute right-0 top-0 h-11 w-10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               <FieldError errors={field.state.meta.errors} />
             </div>
           )}

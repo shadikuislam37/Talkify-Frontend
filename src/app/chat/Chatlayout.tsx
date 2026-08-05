@@ -21,6 +21,7 @@ import { useSocket } from "@/hooks/use-socket";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallStore } from "@/store/use-call-store";
 import E2EEPinModal from "@/components/E2EEPinModal";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface ChatLayoutProps {
   currentUserId?: string;
@@ -129,7 +130,9 @@ export const ChatLayout = ({
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background relative">
+    // 🌟 ফিক্স: h-screen (100vh) → h-app-screen (100dvh fallback সহ)
+    // মোবাইল ব্রাউজারে address bar show/hide হলেও height সঠিক থাকে
+    <div className="flex h-app-screen w-full overflow-hidden bg-background relative">
       {currentUserId && meData && (
         <E2EEPinModal
           currentUser={{ ...meData, id: currentUserId }}
@@ -161,6 +164,7 @@ export const ChatLayout = ({
           </div>
 
           <div className="flex items-center gap-0.5">
+             <ThemeToggle />
             <Dialog>
               <DialogTrigger asChild>
                 <Button
@@ -180,26 +184,26 @@ export const ChatLayout = ({
                   <ProfileSettingsModal
                     currentName={currentUserName}
                     currentImage={currentUserImage}
-                    initialVisibility={true}
+                    initialVisibility={meData?.isActiveStatusVisible ?? true}
                   />
                 </div>
               </DialogContent>
             </Dialog>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleLogout}
-              disabled={isLoggingOut}
-              title="Log Out"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
-            >
-              {isLoggingOut ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <LogOut className="h-4 w-4" />
-              )}
-            </Button>
+          <Button
+    variant="ghost"
+    size="icon"
+    onClick={handleLogout}
+    disabled={isLoggingOut}
+    title="Log Out"
+    className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
+  >
+    {isLoggingOut ? (
+      <Loader2 className="h-4 w-4 animate-spin" />
+    ) : (
+      <LogOut className="h-4 w-4" />
+    )}
+  </Button>
 
             <Button
               variant="ghost"

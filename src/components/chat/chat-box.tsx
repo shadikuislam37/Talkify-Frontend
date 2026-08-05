@@ -286,37 +286,46 @@ export default function ChatBox({
     }
   };
 
-  const handleSaveEdit = async (messageId: string) => {
-    if (!editText.trim() || !currentUserId) return;
-    try {
-      const rawText = editText.trim();
-      const members = conversation?.users || (otherUser ? [otherUser] : []);
+ const handleSaveEdit = async (messageId: string) => {
+  if (!editText.trim() || !currentUserId) return;
+  try {
+    const rawText = editText.trim();
+    const members = conversation?.users || (otherUser ? [otherUser] : []);
 
-      const myPublicKeyPem = getMyPublicKeyPem(currentUserId);
-      const recipients: Recipient[] = [];
-      if (myPublicKeyPem) recipients.push({ userId: currentUserId, publicKeyPem: myPublicKeyPem });
-      members.forEach((m) => {
-        if (m.id !== currentUserId && m.publicKey) {
-          recipients.push({ userId: m.id, publicKeyPem: m.publicKey });
-        }
-      });
+    // prop-কে অগ্রাধিকার দিন — send flow-এর মতোই reliable সোর্স
+    const myPublicKeyPem = currentUserPublicKey || getMyPublicKeyPem(currentUserId);
+    const recipients: Recipient[] = [];
 
-      if (recipients.length === 0) return;
-
-      const { encryptedBody, keys } = await encryptMessage(rawText, recipients);
-
-      await api.patch(`/messages/edit/${messageId}`, {
-        encryptedBody,
-        keys,
-      });
-
-      setEditingMessageId(null);
-      setEditText("");
-      queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
-    } catch (err) {
-      console.error("Failed to edit message:", err);
+    if (!myPublicKeyPem) {
+      // silent fail না করে স্পষ্ট error দিন
+      setSendError("Your encryption key is unavailable. Please refresh and try again.");
+      return;
     }
-  };
+    recipients.push({ userId: currentUserId, publicKeyPem: myPublicKeyPem });
+
+    members.forEach((m) => {
+      if (m.id !== currentUserId && m.publicKey) {
+        recipients.push({ userId: m.id, publicKeyPem: m.publicKey });
+      }
+    });
+
+    if (recipients.length === 0) return;
+
+    const { encryptedBody, keys } = await encryptMessage(rawText, recipients);
+
+    await api.patch(`/messages/edit/${messageId}`, {
+      encryptedBody,
+      keys,
+    });
+
+    setEditingMessageId(null);
+    setEditText("");
+    queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
+  } catch (err) {
+    console.error("Failed to edit message:", err);
+    setSendError("Failed to edit message. Please try again.");
+  }
+};
 
   const confirmDeleteMessage = async () => {
     if (!deletingMessageId) return;

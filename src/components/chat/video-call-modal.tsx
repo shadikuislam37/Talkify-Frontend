@@ -13,10 +13,26 @@ interface VideoCallModalProps {
 
 const ICE_SERVERS = {
   iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
     {
-      urls: process.env.NEXT_PUBLIC_TURN_URL || "turn:global.metered.ca:80",
+      urls: "stun:stun.relay.metered.ca:80",
+    },
+    {
+      urls: "turn:global.relay.metered.ca:80",
+      username: process.env.NEXT_PUBLIC_TURN_USERNAME,
+      credential: process.env.NEXT_PUBLIC_TURN_PASSWORD,
+    },
+    {
+      urls: "turn:global.relay.metered.ca:80?transport=tcp",
+      username: process.env.NEXT_PUBLIC_TURN_USERNAME,
+      credential: process.env.NEXT_PUBLIC_TURN_PASSWORD,
+    },
+    {
+      urls: "turn:global.relay.metered.ca:443",
+      username: process.env.NEXT_PUBLIC_TURN_USERNAME,
+      credential: process.env.NEXT_PUBLIC_TURN_PASSWORD,
+    },
+    {
+      urls: "turns:global.relay.metered.ca:443?transport=tcp",
       username: process.env.NEXT_PUBLIC_TURN_USERNAME,
       credential: process.env.NEXT_PUBLIC_TURN_PASSWORD,
     },
@@ -54,33 +70,50 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   };
 
   // ২. পিয়ার কানেকশন সেটআপ
-  const createPeerConnection = (targetUserId: string) => {
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-    peerConnectionRef.current = pc;
+ const createPeerConnection = (targetUserId: string) => {
+  const pc = new RTCPeerConnection(ICE_SERVERS);
+  peerConnectionRef.current = pc;
 
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, localStreamRef.current!);
+  if (localStreamRef.current) {
+    localStreamRef.current.getTracks().forEach((track) => {
+      pc.addTrack(track, localStreamRef.current!);
+    });
+  }
+
+  pc.ontrack = (event) => {
+    if (userVideoRef.current) {
+      userVideoRef.current.srcObject = event.streams[0];
+      // 🌟 কিছু ব্রাউজারে (বিশেষত Safari/iOS) autoplay policy-র কারণে
+      // async attach হওয়া track স্বয়ংক্রিয়ভাবে play নাও হতে পারে
+      userVideoRef.current.play().catch((err) => {
+        console.error("Remote media playback failed:", err);
       });
     }
-
-    pc.ontrack = (event) => {
-      if (userVideoRef.current) {
-        userVideoRef.current.srcObject = event.streams[0];
-      }
-    };
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit("ice_candidate", {
-          targetUserId,
-          candidate: event.candidate,
-        });
-      }
-    };
-
-    return pc;
   };
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit("ice_candidate", {
+        targetUserId,
+        candidate: event.candidate,
+      });
+    }
+  };
+
+  // 🌟 ডায়াগনস্টিক লগ — কনসোলে দেখুন এটা "connected" পর্যন্ত যাচ্ছে কিনা
+  pc.oniceconnectionstatechange = () => {
+    console.log("🧊 ICE connection state:", pc.iceConnectionState);
+    if (pc.iceConnectionState === "failed") {
+      console.error("❌ ICE connection failed — likely TURN server issue (NAT traversal failed)");
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    console.log("🔗 Peer connection state:", pc.connectionState);
+  };
+
+  return pc;
+};
 
   // ৩. কল শুরু করা (সেন্ডার এন্ড)
   useEffect(() => {
