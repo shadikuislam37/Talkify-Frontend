@@ -304,7 +304,7 @@ export function MessageBubble({
           </div>
         )}
 
-        <div className="flex flex-col max-w-[78%] sm:max-w-[70%] min-w-0 relative">
+        <div className="flex flex-col max-w-[78%] sm:max-w-[70%] min-w-0 w-fit relative">
           {isGroup && !isMe && msg.sender?.name && (
             <span className="text-[11px] font-semibold text-primary mb-0.5 ml-1 truncate">
               {msg.sender.name}
@@ -402,7 +402,7 @@ export function MessageBubble({
                         rel="noopener noreferrer"
                         prefetch={false}
                         onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-3 p-3 bg-muted/60 rounded-xl border hover:bg-muted transition min-w-0"
+                        className="flex items-center gap-3 p-3 bg-muted/60 rounded-xl border hover:bg-muted transition w-full max-w-full min-w-0"
                       >
                         <span className="text-2xl shrink-0">📄</span>
                         <div className="overflow-hidden min-w-0 flex-1">
