@@ -17,12 +17,11 @@ export const useGetMessages = (conversationId: string | null) => {
     queryKey: ["messages", conversationId],
     enabled: !!conversationId,
     queryFn: async ({ pageParam }) => {
-      const res = await api.get<T>(`/messages/${conversationId}`, {
+      const res = await api.get<any>(`/messages/${conversationId}`, {
         params: { cursor: pageParam },
       });
-      // 🌟 ফিক্স: api.ts-এর axios interceptor আগে থেকেই response.data রিটার্ন করে,
-      // তাই res নিজেই backend envelope { success, message, data, nextCursor } —
-      // res.data সরাসরি Message[], আর nextCursor top-level-এই আছে (res.data.nextCursor না)
+      // 🌟 api.ts-এর axios interceptor আগে থেকেই response.data রিটার্ন করে,
+      // তাই res নিজেই backend envelope { success, message, data, nextCursor }
       const messages = (res.data ?? []) as MessagesPage;
       messages.nextCursor = res.nextCursor;
       return messages;
@@ -44,13 +43,14 @@ interface SendMessageVars {
   replyToPreview?: Message["replyTo"]; // শুধু optimistic bubble-এ reply-quote দেখানোর জন্য
   members: ConversationMemberForEncryption[];
   currentUserId: string;
- currentUserPublicKey?: string | null; // 🌟 Zustand থেকে পাঠানো পাবলিক কী
+  currentUserPublicKey?: string | null; // 🌟 Zustand থেকে পাঠানো পাবলিক কী
 }
 
 export const useSendMessage = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
+      clientId, // 🌟 destructure — api.post বডিতে পাঠাতে হবে
       conversationId,
       body,
       image,
@@ -60,50 +60,52 @@ export const useSendMessage = () => {
       replyToId,
       members,
       currentUserId,
-      currentUserPublicKey, // 🌟 আর্গুমেন্ট রিসিভ
+      currentUserPublicKey,
     }: SendMessageVars) => {
       let encryptedBody: string | undefined;
       let keys: { userId: string; encryptedKey: string }[] | undefined;
 
       if (body) {
-  const myPublicKeyPem = currentUserPublicKey;
+        const myPublicKeyPem = currentUserPublicKey;
 
-  // 🌟 ফেইল-ফাস্ট: নিজের কী না থাকলে প্রথমেই আটকে দিন
-  if (!myPublicKeyPem) {
-    throw new Error(
-      "Your own encryption key is not set up on this device yet. Please complete E2EE setup first."
-    );
-  }
+        // 🌟 ফেইল-ফাস্ট: নিজের কী না থাকলে প্রথমেই আটকে দিন
+        if (!myPublicKeyPem) {
+          throw new Error(
+            "Your own encryption key is not set up on this device yet. Please complete E2EE setup first."
+          );
+        }
 
-  const allMemberIds = new Set([currentUserId, ...members.map((m) => m.id)]);
-  const recipients: Recipient[] = [];
-  const missingKeyFor: string[] = [];
+        const allMemberIds = new Set([currentUserId, ...members.map((m) => m.id)]);
+        const recipients: Recipient[] = [];
+        const missingKeyFor: string[] = [];
 
-  allMemberIds.forEach((id) => {
-    const pem =
-      id === currentUserId
-        ? myPublicKeyPem
-        : members.find((m) => m.id === id)?.publicKey;
+        allMemberIds.forEach((id) => {
+          const pem =
+            id === currentUserId
+              ? myPublicKeyPem
+              : members.find((m) => m.id === id)?.publicKey;
 
-    if (pem) {
-      recipients.push({ userId: id, publicKeyPem: pem });
-    } else {
-      missingKeyFor.push(id);
-    }
-  });
+          if (pem) {
+            recipients.push({ userId: id, publicKeyPem: pem });
+          } else {
+            missingKeyFor.push(id);
+          }
+        });
 
-  if (missingKeyFor.length > 0) {
-    throw new Error(
-      `Cannot send: ${missingKeyFor.length} member(s) haven't set up encryption yet. Ask them to open the app once.`
-    );
-  }
+        if (missingKeyFor.length > 0) {
+          throw new Error(
+            `Cannot send: ${missingKeyFor.length} member(s) haven't set up encryption yet. Ask them to open the app once.`
+          );
+        }
 
-  const encrypted = await encryptMessage(body, recipients);
-  encryptedBody = encrypted.encryptedBody;
-  keys = encrypted.keys;
-}
+        const encrypted = await encryptMessage(body, recipients);
+        encryptedBody = encrypted.encryptedBody;
+        keys = encrypted.keys;
+      }
 
       const response = await api.post(`/messages/${conversationId}`, {
+        clientId, // 🌟 ফিক্স: server-কে temp id জানানো হচ্ছে যাতে broadcast-এ ফেরত
+        //         পাঠাতে পারে — frontend তখন multi-device de-dupe করতে পারে
         encryptedBody,
         keys,
         image,
@@ -112,10 +114,10 @@ export const useSendMessage = () => {
         fileName,
         replyToId,
       });
-      return response.data; 
+      return response.data;
     },
 
-    // 🌟 নতুন: Optimistic UI — REST কল শেষ হওয়ার জন্য অপেক্ষা না করে সাথে সাথেই
+    // 🌟 Optimistic UI — REST কল শেষ হওয়ার জন্য অপেক্ষা না করে সাথে সাথেই
     // একটা "pending" বাবল cache-এ বসিয়ে দেওয়া হচ্ছে
     onMutate: async (vars: SendMessageVars) => {
       await queryClient.cancelQueries({ queryKey: ["messages", vars.conversationId] });
@@ -124,6 +126,7 @@ export const useSendMessage = () => {
 
       const optimisticMessage: Message = {
         id: vars.clientId,
+        clientId: vars.clientId, // 🌟 নিজের entry-তেও clientId রাখা হলো (de-dupe match-এর জন্য)
         body: vars.body ?? null,
         image: vars.image ?? null,
         fileUrl: vars.fileUrl ?? null,
@@ -157,7 +160,6 @@ export const useSendMessage = () => {
         }
 
         // 🌟 রিট্রাই হলে (একই clientId ইতিমধ্যে কোনো page-এ আছে) সেই এন্ট্রিটাই আপডেট
-        // করা হচ্ছে "pending" স্ট্যাটাসে — নতুন করে prepend করলে duplicate বাবল দেখা যেত
         const alreadyExists = old.pages.some((page: Message[]) =>
           page.some((m) => m.id === vars.clientId)
         );
@@ -179,8 +181,7 @@ export const useSendMessage = () => {
       return { previousData, clientId: vars.clientId };
     },
 
-    // 🌟 ব্যর্থ হলে বাবল মুছে ফেলা হচ্ছে না — "failed" মার্ক করে রাখা হচ্ছে, যাতে
-    // ইউজার bubble-এ retry বাটন দেখে আবার পাঠাতে পারে
+    // 🌟 ব্যর্থ হলে বাবল "failed" মার্ক করা হচ্ছে (retry বাটনের জন্য)
     onError: (_error, vars, context) => {
       queryClient.setQueryData(["messages", vars.conversationId], (old: any) => {
         if (!old) return old;
@@ -193,7 +194,7 @@ export const useSendMessage = () => {
       });
     },
 
-    // 🌟 সফল হলে temporary বাবলটাকে সার্ভার থেকে আসা আসল মেসেজ দিয়ে replace করা হচ্ছে
+    // 🌟 সফল হলে temporary বাবলটাকে সার্ভার থেকে আসা আসল মেসেজ দিয়ে replace
     onSuccess: (newMessage, vars, context) => {
       queryClient.setQueryData(["messages", vars.conversationId], (old: any) => {
         if (!old) return old;
@@ -251,8 +252,7 @@ export const useDeleteMessageForMe = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (messageId: string) => {
-      // 🌟 ফিক্স: backend route হলো DELETE /messages/:messageId/delete-for-me
-      // (আগে messageId আর delete-for-me এর ক্রম উল্টো ছিল, 404 দিত)
+      // 🌟 backend route: DELETE /messages/:messageId/delete-for-me
       const res = await api.delete(`/messages/${messageId}/delete-for-me`);
       return res;
     },

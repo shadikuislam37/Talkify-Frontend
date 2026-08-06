@@ -39,47 +39,77 @@ export function useSocket(
 
     socket.on("connect", joinRoom);
 
-    // 🌟 ১. রিয়েল-টাইম নতুন মেসেজ হ্যান্ডলার
+    // 🌟 ১. রিয়েল-টাইম নতুন মেসেজ হ্যান্ডলার (MULTI-DEVICE SAFE)
     const handleReceiveMessage = (newMessage: Message) => {
-  const isMyMessage = String(newMessage.senderId || newMessage.sender?.id) === String(currentUserId);
+      const isMyMessage =
+        String(newMessage.senderId || newMessage.sender?.id) === String(currentUserId);
 
-  if (!isMyMessage) {
-    playNotificationSound();
-    // 🌟 ফিক্স: keys আর currentUserId পাস করা হলো, যাতে sendPushNotification
-    // ভেতরে decryptMessage() ঠিকভাবে চালাতে পারে এবং আসল টেক্সট দেখাতে পারে
-    sendPushNotification(
-      newMessage.sender?.name || "New Message",
-      newMessage.body || "Sent an attachment",
-      newMessage.keys ?? undefined,
-      currentUserId
-    );
+      if (!isMyMessage) {
+        playNotificationSound();
+        // 🌟 keys আর currentUserId পাস — sendPushNotification ভেতরে decryptMessage()
+        // চালিয়ে আসল টেক্সট দেখাতে পারে
+        sendPushNotification(
+          newMessage.sender?.name || "New Message",
+          newMessage.body || "Sent an attachment",
+          newMessage.keys ?? undefined,
+          currentUserId
+        );
 
-    if (conversationId && newMessage.conversationId === conversationId) {
-      socket.emit("mark_message_as_read", {
-        messageId: newMessage.id,
-        conversationId: newMessage.conversationId,
+        if (conversationId && newMessage.conversationId === conversationId) {
+          socket.emit("mark_message_as_read", {
+            messageId: newMessage.id,
+            conversationId: newMessage.conversationId,
+          });
+        }
+      }
+
+      // 🌟 MULTI-DEVICE SAFE de-dupe:
+      // নিজের পাঠানো মেসেজ socket দিয়ে দুই রকমভাবে ফেরত আসতে পারে —
+      //   (ক) যে tab থেকে পাঠানো: সেখানে optimistic bubble আছে (clientId দিয়ে),
+      //       useSendMessage-এর onSuccess সেটাকে server message দিয়ে replace করবে।
+      //   (খ) একই ইউজারের অন্য tab/device: সেখানে optimistic bubble নেই, তাই
+      //       এই মেসেজটা realtime দেখাতে হবে।
+      // তাই নিজের মেসেজ blanket skip করা যাবে না (তাহলে খ ভাঙে)।
+      // সমাধান: server message-এর সাথে আসা clientId (বা server id) দিয়ে de-dupe —
+      //   • list-এ আগে থেকে থাকলে → replace (double-render বন্ধ)
+      //   • না থাকলে → নতুন হিসেবে add (realtime sync)
+      // ⚠️ backend-এর receive_message broadcast-এ clientId ferry করতে হবে
+      //    (message.controller + message.service ফিক্স দেখো)।
+      const incomingClientId = (newMessage as any).clientId as string | undefined;
+
+      queryClient.setQueryData(["messages", newMessage.conversationId], (oldData: any) => {
+        if (!oldData || !oldData.pages || oldData.pages.length === 0) {
+          return {
+            pages: [[newMessage]],
+            pageParams: [null],
+          };
+        }
+
+        // এই মেসেজ (clientId বা server id মিলে) আগে থেকে আছে কিনা — সব page জুড়ে
+        const matches = (m: Message) =>
+          m.id === newMessage.id ||
+          (incomingClientId && (m.id === incomingClientId || m.clientId === incomingClientId));
+
+        const alreadyExists = oldData.pages.some((page: Message[]) =>
+          page.some(matches)
+        );
+
+        if (alreadyExists) {
+          // থাকলে duplicate না করে server version দিয়ে replace/merge
+          // (optimistic "pending" → confirmed: আসল id + status বসে যায়)
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page: Message[]) =>
+              page.map((m) => (matches(m) ? { ...m, ...newMessage } : m))
+            ),
+          };
+        }
+
+        // নেই — অন্য device/tab থেকে আসা নতুন মেসেজ, top-এ add
+        const newPages = [...oldData.pages];
+        newPages[0] = [newMessage, ...newPages[0]];
+        return { ...oldData, pages: newPages };
       });
-    }
-  }
-
-   queryClient.setQueryData(["messages", newMessage.conversationId], (oldData: any) => {
-  // 🌟 যদি আগে কোনো মেসেজ না থাকে (Empty Chat), তবে নতুন অ্যারে তৈরি করে দিন
-  if (!oldData || !oldData.pages || oldData.pages.length === 0) {
-    return {
-      pages: [[newMessage]],
-      pageParams: [null],
-    };
-  }
-
-  const newPages = [...oldData.pages];
-  if (newPages.length > 0) {
-    const exists = newPages[0].some((m: Message) => m.id === newMessage.id);
-    if (!exists) {
-      newPages[0] = [newMessage, ...newPages[0]];
-    }
-  }
-  return { ...oldData, pages: newPages };
-});
 
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     };
@@ -181,7 +211,7 @@ export function useSocket(
     // 🌟 ৫. Typing, Status, Group & Presence Handlers
     const handleTypingStart = (data: any) => { if (onTypingStart) onTypingStart(data); };
     const handleTypingStop = (data: any) => { if (onTypingStop) onTypingStop(data); };
-    
+
     const handleMessageStatusChange = (data: any) => {
       if (onMessageStatusChange) onMessageStatusChange(data);
       queryClient.invalidateQueries({ queryKey: ["messages", data.conversationId] });
@@ -196,13 +226,13 @@ export function useSocket(
     const handleUserOnline = (data: any) => { if (onUserOnline) onUserOnline(data); };
     const handleUserOffline = (data: any) => { if (onUserOffline) onUserOffline(data); };
 
-    // 🌟 সমস্ত ইভেন্ট লিসেনার রেজিস্টার করা হলো
+    // 🌟 সমস্ত ইভেন্ট লিসেনার রেজিস্টার
     socket.on("receive_message", handleReceiveMessage);
     socket.on("receive_reaction", handleReceiveReaction);
     socket.on("on_message_deleted", handleMessageDeleted);
     socket.on("on_message_deleted_for_me", handleMessageDeletedForMe);
     socket.on("on_message_edited", handleMessageEdited);
-    
+
     socket.on("receive_call_offer", handleReceiveCallOffer);
     socket.on("receive_call_answer", handleReceiveCallAnswer);
     socket.on("receive_ice_candidate", handleReceiveIceCandidate);
@@ -216,7 +246,7 @@ export function useSocket(
     socket.on("user_online", handleUserOnline);
     socket.on("user_offline", handleUserOffline);
 
-    // 🌟 ক্লিনআপ ফাংশন
+    // 🌟 ক্লিনআপ
     return () => {
       socket.off("connect", joinRoom);
       socket.off("receive_message", handleReceiveMessage);
@@ -243,12 +273,12 @@ export function useSocket(
       }
     };
   }, [
-    conversationId, 
-    currentUserId, 
-    queryClient, 
-    onCallOffer, 
-    onCallAnswer, 
-    onIceCandidate, 
+    conversationId,
+    currentUserId,
+    queryClient,
+    onCallOffer,
+    onCallAnswer,
+    onIceCandidate,
     onEndCall,
     onTypingStart,
     onTypingStop,

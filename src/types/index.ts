@@ -89,6 +89,7 @@ export interface Message {
 
   senderId?: string;
   sender?: AuthUser;
+  clientId?: string;
 
   conversationId?: string;
 
