@@ -21,7 +21,9 @@ import { api } from "@/lib/api";
 
 interface E2EEPinModalProps {
   currentUser: any;
-  // ইউজার PIN ভুলে গেলে reset করার পর কল হবে — সাধারণত user object রিফ্রেশ করার জন্য
+  // ইউজার PIN ভুলে গেলে reset করার পর, অথবা প্রথমবার key setup শেষ হলে কল হবে —
+  // parent (ChatLayout) এতে useGetMe রিফেচ করে, যাতে নতুন publicKey সাথে সাথে
+  // পাওয়া যায় (নাহলে message পাঠাতে গেলে "key not set up" error আসে)।
   onKeysReset?: () => void;
 }
 
@@ -101,6 +103,12 @@ export default function E2EEPinModal({ currentUser, onKeysReset }: E2EEPinModalP
 
         resetFormState();
         setOpen(false);
+
+        // 🌟 ফিক্স: প্রথমবার setup শেষে parent-কে জানানো হচ্ছে যাতে useGetMe
+        // রিফেচ করে — নাহলে meData.publicKey পুরনো cache-এ null থাকে, আর
+        // message পাঠাতে গেলে "Your own encryption key is not set up" error আসে
+        // (আগে শুধু page refresh করলে ঠিক হতো)। এখন refresh ছাড়াই কাজ করবে।
+        onKeysReset?.();
       } else {
         // ৩. নতুন ডিভাইসে পিন দিয়ে প্রাইভেট কি রিকভার
         try {
