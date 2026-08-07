@@ -128,11 +128,14 @@ export function MessageBubble({
 
   const isReadByOther = React.useMemo(() => {
     if (!isMe) return false;
-    
-    // 🌟 যদি মেসেজটি অলরেডি সার্ভার থেকে READ স্ট্যাটাস পায় অথবা সকেট থেকে রিড হয়ে থাকে
-    if (msg.status === "READ") return true;
 
-    // 🌟 যদি reads অ্যারে থাকে এবং সেখানে অন্য কারো আইডি থাকে
+    // ১. মেসেজের নিজস্ব স্ট্যাটাস যদি READ হয়
+    if (msg.status === "READ" || msg.status === "DELIVERED") {
+      // আপনি যদি ডেলিভারড হলেও টিক দিতে চান বা শুধু রিড হলে:
+      if (msg.status === "READ") return true;
+    }
+
+    // ২. reads অ্যারে চেক
     if (msg.reads && Array.isArray(msg.reads) && msg.reads.length > 0) {
       const hasOtherRead = msg.reads.some((r) => {
         const readerId = typeof r === "string" ? r : r.userId;
@@ -141,10 +144,12 @@ export function MessageBubble({
       if (hasOtherRead) return true;
     }
 
-    // 🌟 ইনস্ট্যান্ট ফিক্স: অপরপক্ষ চ্যাটে থাকলে বা কনভার্সেশনের লাস্ট সিন আপডেট থাকলে ডাবল টিক দেখানোর জন্য 
-    // যদি আপনার ব্যাকএন্ডে conversation.lastRead یا অনুরূপ কিছু থাকে তা এখানে চেক করতে পারেন,
-    // তবে আপাতত সার্ভার স্ট্যাটাস ও reads ঠিকমতো কাজ না করলে এটি ফোর্সড ব্লু টিক দিতে পারেন:
-    return false; 
+    // ৩. 🌟 ফুল-প্রুফ ফিক্স: যদি কনভার্সেশনের অন্য কোনো ইউজার চ্যাটে থাকে বা মেসেজ টাইম স্ট্যাম্প অনুযায়ী পড়া হয়ে থাকে, 
+    // অথবা আপনার যদি এমন কোনো প্রপার্টি থাকে যা দিয়ে বোঝা যায় অপরপক্ষ অ্যাক্টিভ বা সিন করেছে
+    // ব্যাকএন্ড থেকে সকেট ইভেন্টে যদি মেসেজ লিস্ট রিফেচ (queryClient.invalidateQueries) না হয়, 
+    // তবে এটি কাজ করবে না। তাই সকেট লিসেনারে ক্যাশ আপডেট নিশ্চিত করতে হবে।
+
+    return false;
   }, [msg.reads, msg.status, currentUserId, isMe]);
 
   return (
@@ -501,11 +506,17 @@ export function MessageBubble({
         </div>
       </div>
 
-      {/* ইমেজ লাইটবক্স — attachment-এ ক্লিক করলে ফুল-স্ক্রিন প্রিভিউ খোলে */}
+   {/* ইমেজ লাইটবক্স — attachment-এ ক্লিক করলে ফুল-স্ক্রিন প্রিভিউ খোলে */}
       {previewSrc && (
         <div
           className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
           onClick={() => setPreviewSrc(null)}
+          onTouchEnd={(e) => {
+            // মোবাইলে ব্যাকগ্রাউন্ডে ট্যাপ করলে যেন লাইটবক্স বন্ধ হয়
+            if (e.target === e.currentTarget) {
+              setPreviewSrc(null);
+            }
+          }}
         >
           <button
             type="button"
@@ -513,14 +524,19 @@ export function MessageBubble({
               e.stopPropagation();
               setPreviewSrc(null);
             }}
-            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setPreviewSrc(null);
+            }}
+            className="absolute top-4 right-4 p-3 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors z-[110] cursor-pointer"
             title="Close"
           >
-            <X className="h-5 w-5" />
+            <X className="h-6 w-6" />
           </button>
 
           <div
-            className="relative w-full h-full max-w-4xl max-h-[85vh]"
+            className="relative w-full h-full max-w-4xl max-h-[85vh] flex items-center justify-center"
             onClick={(e) => e.stopPropagation()}
           >
             <Image

@@ -50,7 +50,7 @@ export const useSendMessage = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
-      clientId, // 🌟 destructure — api.post বডিতে পাঠাতে হবে
+      clientId,
       conversationId,
       body,
       image,
@@ -68,7 +68,6 @@ export const useSendMessage = () => {
       if (body) {
         const myPublicKeyPem = currentUserPublicKey;
 
-        // 🌟 ফেইল-ফাস্ট: নিজের কী না থাকলে প্রথমেই আটকে দিন
         if (!myPublicKeyPem) {
           throw new Error(
             "Your own encryption key is not set up on this device yet. Please complete E2EE setup first."
@@ -94,7 +93,7 @@ export const useSendMessage = () => {
 
         if (missingKeyFor.length > 0) {
           throw new Error(
-            `Cannot send: ${missingKeyFor.length} member(s) haven't set up encryption yet. Ask them to open the app once.`
+            `Cannot send: ${missingKeyFor.length} member(s) haven't set up encryption yet.`
           );
         }
 
@@ -104,8 +103,7 @@ export const useSendMessage = () => {
       }
 
       const response = await api.post(`/messages/${conversationId}`, {
-        clientId, // 🌟 ফিক্স: server-কে temp id জানানো হচ্ছে যাতে broadcast-এ ফেরত
-        //         পাঠাতে পারে — frontend তখন multi-device de-dupe করতে পারে
+        clientId,
         encryptedBody,
         keys,
         image,
@@ -117,8 +115,6 @@ export const useSendMessage = () => {
       return response.data;
     },
 
-    // 🌟 Optimistic UI — REST কল শেষ হওয়ার জন্য অপেক্ষা না করে সাথে সাথেই
-    // একটা "pending" বাবল cache-এ বসিয়ে দেওয়া হচ্ছে
     onMutate: async (vars: SendMessageVars) => {
       await queryClient.cancelQueries({ queryKey: ["messages", vars.conversationId] });
 
@@ -126,7 +122,7 @@ export const useSendMessage = () => {
 
       const optimisticMessage: Message = {
         id: vars.clientId,
-        clientId: vars.clientId, // 🌟 নিজের entry-তেও clientId রাখা হলো (de-dupe match-এর জন্য)
+        clientId: vars.clientId,
         body: vars.body ?? null,
         image: vars.image ?? null,
         fileUrl: vars.fileUrl ?? null,
@@ -139,7 +135,7 @@ export const useSendMessage = () => {
         createdAt: new Date().toISOString(),
         status: "SENT",
         isEdited: false,
-        keys: undefined, // 🌟 keys না থাকায় ChatBox-এর decrypt effect body-কে already-plain ধরে নেবে
+        keys: undefined,
         _sendStatus: "pending",
         _retryPayload: {
           conversationId: vars.conversationId,
@@ -159,20 +155,6 @@ export const useSendMessage = () => {
           return { pages: [[optimisticMessage]], pageParams: [undefined] };
         }
 
-        // 🌟 রিট্রাই হলে (একই clientId ইতিমধ্যে কোনো page-এ আছে) সেই এন্ট্রিটাই আপডেট
-        const alreadyExists = old.pages.some((page: Message[]) =>
-          page.some((m) => m.id === vars.clientId)
-        );
-
-        if (alreadyExists) {
-          return {
-            ...old,
-            pages: old.pages.map((page: Message[]) =>
-              page.map((m) => (m.id === vars.clientId ? optimisticMessage : m))
-            ),
-          };
-        }
-
         const newPages = [...old.pages];
         newPages[0] = [optimisticMessage, ...newPages[0]];
         return { ...old, pages: newPages };
@@ -181,7 +163,6 @@ export const useSendMessage = () => {
       return { previousData, clientId: vars.clientId };
     },
 
-    // 🌟 ব্যর্থ হলে বাবল "failed" মার্ক করা হচ্ছে (retry বাটনের জন্য)
     onError: (_error, vars, context) => {
       queryClient.setQueryData(["messages", vars.conversationId], (old: any) => {
         if (!old) return old;
@@ -194,14 +175,18 @@ export const useSendMessage = () => {
       });
     },
 
-    // 🌟 সফল হলে temporary বাবলটাকে সার্ভার থেকে আসা আসল মেসেজ দিয়ে replace
     onSuccess: (newMessage, vars, context) => {
       queryClient.setQueryData(["messages", vars.conversationId], (old: any) => {
         if (!old) return old;
         return {
           ...old,
           pages: old.pages.map((page: Message[]) =>
-            page.map((m) => (m.id === context?.clientId ? newMessage : m))
+            page.map((m) => 
+              // 🌟 clientId অথবা আসল id দিয়ে ম্যাচ করে নিখুঁতভাবে রপ্লেস করা হলো
+              (m.id === context?.clientId || m.clientId === context?.clientId || m.id === newMessage.id) 
+                ? { ...newMessage, _sendStatus: undefined } 
+                : m
+            )
           ),
         };
       });
