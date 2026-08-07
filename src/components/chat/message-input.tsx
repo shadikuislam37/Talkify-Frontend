@@ -3,11 +3,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, X, FileText, Film, Music } from "lucide-react";
+import { Loader2, Send, X, FileText, Smile } from "lucide-react";
 import { sendMessageSchema } from "@/schemas/chat.schema";
 import Image from "next/image";
 import { Message } from "@/types";
 import MediaUploadButton from "./MediaUploadButton";
+import EmojiPicker from "emoji-picker-react";
 
 interface MessageInputProps {
   conversationId: string;
@@ -20,7 +21,7 @@ interface MessageInputProps {
   onTyping: (text: string) => void;
 }
 
-const MAX_TEXTAREA_HEIGHT = 120; // px — এর বেশি বড় হলে ভেতরে scroll হবে
+const MAX_TEXTAREA_HEIGHT = 120;
 
 export const MessageInput = ({
   conversationId,
@@ -38,7 +39,19 @@ export const MessageInput = ({
     name: string;
   } | null>(null);
 
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const form = useForm({
     defaultValues: {
@@ -77,8 +90,8 @@ export const MessageInput = ({
         form.setFieldValue("fileName", "");
         setMediaPreview(null);
         onCancelReply();
+        setShowEmojiPicker(false);
 
-        // 🌟 সেন্ড হওয়ার পর textarea-র height আবার ডিফল্টে রিসেট করা
         if (textareaRef.current) {
           textareaRef.current.style.height = "auto";
         }
@@ -88,7 +101,6 @@ export const MessageInput = ({
     },
   });
 
-  // 🌟 টাইপ করার সময় textarea-র height content অনুযায়ী বাড়ে, MAX_TEXTAREA_HEIGHT পর্যন্ত
   const autoResize = (el: HTMLTextAreaElement) => {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
@@ -114,8 +126,7 @@ export const MessageInput = ({
   };
 
   return (
-    <div className="flex flex-col border-t bg-background shrink-0 mt-auto">
-      {/* Reply Preview Bar */}
+    <div className="flex flex-col border-t bg-background shrink-0 mt-auto relative">
       {replyingTo && (
         <div className="flex items-center justify-between gap-2 p-2 bg-muted/80 border-b text-xs">
           <div className="truncate pr-2 min-w-0 flex-1">
@@ -136,7 +147,6 @@ export const MessageInput = ({
         </div>
       )}
 
-      {/* Media Preview Box */}
       {mediaPreview && mediaPreview.url && (
         <div className="p-2 border-b bg-muted/40">
           <div className="relative w-fit max-w-full flex items-center gap-2 p-2 bg-background rounded-md border shadow-sm">
@@ -150,16 +160,6 @@ export const MessageInput = ({
                   className="object-cover"
                   unoptimized
                 />
-              </div>
-            ) : mediaPreview.type?.startsWith("video/") ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground p-1 min-w-0">
-                <Film className="h-4 w-4 text-primary shrink-0" />
-                <span className="max-w-[45vw] sm:max-w-[150px] truncate">{mediaPreview.name}</span>
-              </div>
-            ) : mediaPreview.type?.startsWith("audio/") ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground p-1 min-w-0">
-                <Music className="h-4 w-4 text-primary shrink-0" />
-                <span className="max-w-[45vw] sm:max-w-[150px] truncate">{mediaPreview.name}</span>
               </div>
             ) : (
               <div className="flex items-center gap-2 text-xs text-muted-foreground p-1 min-w-0">
@@ -181,14 +181,13 @@ export const MessageInput = ({
         </div>
       )}
 
-      {/* Main Input Form — 🌟 items-end যাতে textarea বড় হলে বাটনগুলো নিচেই স্থির থাকে */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
           e.stopPropagation();
           form.handleSubmit();
         }}
-        className="flex gap-1.5 sm:gap-2 items-end p-2 sm:p-4"
+        className="flex gap-1.5 sm:gap-2 items-end p-2 sm:p-4 relative"
       >
         <div className="shrink-0 pb-1">
           <MediaUploadButton onUploadComplete={handleUploadComplete} />
@@ -196,7 +195,7 @@ export const MessageInput = ({
 
         <form.Field name="body">
           {(field) => (
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 relative">
               <textarea
                 ref={textareaRef}
                 name={field.name}
@@ -208,9 +207,6 @@ export const MessageInput = ({
                   autoResize(e.target);
                 }}
                 onKeyDown={(e) => {
-                  // 🌟 Enter = সেন্ড, Shift+Enter = নতুন লাইন
-                  // isComposing চেক করা হলো যাতে বাংলা/অন্য IME দিয়ে টাইপ করার
-                  // সময় Enter চাপলে অনিচ্ছাকৃতভাবে সেন্ড না হয়ে যায়
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     if (field.state.value?.trim() || mediaPreview) {
@@ -222,8 +218,43 @@ export const MessageInput = ({
                 placeholder="Type a message..."
                 autoComplete="off"
                 disabled={isSending}
-                className="w-full resize-none overflow-y-auto min-h-[40px] max-h-[120px] rounded-md border border-input bg-background px-3 py-2.5 text-sm leading-5 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                className="w-full resize-none overflow-y-auto min-h-[40px] max-h-[120px] rounded-md border border-input bg-background pl-3 pr-10 py-2.5 text-sm leading-5 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
+
+              <div className="absolute right-2 bottom-2.5 flex items-center">
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className="text-muted-foreground hover:text-foreground transition-colors p-1 cursor-pointer"
+                  title="Choose an emoji"
+                >
+                  <Smile className="h-5 w-5" />
+                </button>
+
+                {showEmojiPicker && (
+                  <div
+                    ref={emojiPickerRef}
+                    className="absolute bottom-full right-0 mb-3 z-50 shadow-2xl rounded-2xl overflow-hidden max-w-[90vw] sm:max-w-[320px]"
+                  >
+                    <EmojiPicker
+                      onEmojiClick={(emojiData) => {
+                        const currentVal = field.state.value || "";
+                        const newVal = currentVal + emojiData.emoji;
+                        field.handleChange(newVal);
+                        onTyping(newVal);
+                        if (textareaRef.current) {
+                          textareaRef.current.focus();
+                          autoResize(textareaRef.current);
+                        }
+                      }}
+                      width="100%"
+                      height={400}
+                      searchDisabled={false}
+                      skinTonesDisabled
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </form.Field>

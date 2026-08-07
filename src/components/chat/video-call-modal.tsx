@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import Image from "next/image";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useCallStore } from "@/store/use-call-store";
 import { Button } from "@/components/ui/button";
 import { PhoneOff, PhoneCall, Mic, MicOff, Video, VideoOff, Volume2 } from "lucide-react";
@@ -48,10 +47,21 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
   const myVideoRef = useRef<HTMLVideoElement | null>(null);
   const userVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
-  // ১. মিডিয়া স্ট্রিম (অডিও কলের জন্য শুধু মাইক, ভিডিও কলের জন্য মাইক + ক্যামেরা)
+  const handleCleanup = useCallback(() => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    endCall();
+  }, [endCall]);
+
   const startMediaStream = async (videoEnabled: boolean) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -69,53 +79,50 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     }
   };
 
-  // ২. পিয়ার কানেকশন সেটআপ
- const createPeerConnection = (targetUserId: string) => {
-  const pc = new RTCPeerConnection(ICE_SERVERS);
-  peerConnectionRef.current = pc;
+  const createPeerConnection = (targetUserId: string) => {
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    peerConnectionRef.current = pc;
 
-  if (localStreamRef.current) {
-    localStreamRef.current.getTracks().forEach((track) => {
-      pc.addTrack(track, localStreamRef.current!);
-    });
-  }
-
-  pc.ontrack = (event) => {
-    if (userVideoRef.current) {
-      userVideoRef.current.srcObject = event.streams[0];
-      // 🌟 কিছু ব্রাউজারে (বিশেষত Safari/iOS) autoplay policy-র কারণে
-      // async attach হওয়া track স্বয়ংক্রিয়ভাবে play নাও হতে পারে
-      userVideoRef.current.play().catch((err) => {
-        console.error("Remote media playback failed:", err);
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => {
+        pc.addTrack(track, localStreamRef.current!);
       });
     }
+
+    pc.ontrack = (event) => {
+      const remoteStream = event.streams[0];
+      
+      if (userVideoRef.current) {
+        userVideoRef.current.srcObject = remoteStream;
+        userVideoRef.current.play().catch((err) => {
+          console.error("Remote video playback failed:", err);
+        });
+      }
+
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStream;
+        remoteAudioRef.current.play().catch((err) => {
+          console.error("Remote audio playback failed:", err);
+        });
+      }
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit("ice_candidate", {
+          targetUserId,
+          candidate: event.candidate,
+        });
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log("🧊 ICE connection state:", pc.iceConnectionState);
+    };
+
+    return pc;
   };
 
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.emit("ice_candidate", {
-        targetUserId,
-        candidate: event.candidate,
-      });
-    }
-  };
-
-  // 🌟 ডায়াগনস্টিক লগ — কনসোলে দেখুন এটা "connected" পর্যন্ত যাচ্ছে কিনা
-  pc.oniceconnectionstatechange = () => {
-    console.log("🧊 ICE connection state:", pc.iceConnectionState);
-    if (pc.iceConnectionState === "failed") {
-      console.error("❌ ICE connection failed — likely TURN server issue (NAT traversal failed)");
-    }
-  };
-
-  pc.onconnectionstatechange = () => {
-    console.log("🔗 Peer connection state:", pc.connectionState);
-  };
-
-  return pc;
-};
-
-  // ৩. কল শুরু করা (সেন্ডার এন্ড)
   useEffect(() => {
     if (isCalling && targetUser) {
       (async () => {
@@ -134,9 +141,8 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
         });
       })();
     }
-  }, [isCalling]);
+  }, [isCalling, isVideoCall, targetUser, socket]);
 
-  // ৪. সকেট লিসেনার
   useEffect(() => {
     if (!socket) return;
 
@@ -166,9 +172,8 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       socket.off("receive_ice_candidate");
       socket.off("receive_end_call");
     };
-  }, [socket]);
+  }, [socket, handleCleanup, acceptCall]);
 
-  // ৫. কল রিসিভ করা (রিসিভার এন্ড)
   const handleAccept = async () => {
     if (!incomingCall) return;
 
@@ -190,7 +195,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     acceptCall();
   };
 
-  // মিউট টগল করার ফাংশন
   const toggleMute = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track) => {
@@ -200,7 +204,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     }
   };
 
-  // ভিডিও টগল করার ফাংশন
   const toggleVideo = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getVideoTracks().forEach((track) => {
@@ -208,17 +211,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       });
       setIsVideoOff(!isVideoOff);
     }
-  };
-
-  const handleCleanup = () => {
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-    }
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    endCall();
   };
 
   const handleEndCall = () => {
@@ -235,7 +227,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4">
-      {/* ইনকামিং কল পপআপ */}
       {incomingCall && !callActive && (
         <div className="bg-background border rounded-2xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl animate-in fade-in zoom-in">
           <div className="relative w-20 h-20 mx-auto rounded-full overflow-hidden border-2 border-primary flex items-center justify-center bg-muted">
@@ -258,33 +249,59 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
         </div>
       )}
 
-      {/* অ্যাক্টিভ কল স্ক্রিন (অডিও বা ভিডিও) */}
       {(isCalling || callActive) && !incomingCall && (
         <div className="relative w-full max-w-4xl h-[80vh] bg-muted/20 rounded-2xl overflow-hidden border flex flex-col items-center justify-center shadow-2xl">
           
+          <audio ref={remoteAudioRef} autoPlay playsInline />
+
           {activeCallTypeVideo ? (
-            // ভিডিও কল UI
             <div className="relative w-full h-full flex items-center justify-center bg-black">
-              <video ref={userVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
-              
-              {!callActive && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/90 space-y-3">
-                  <p className="font-medium text-lg animate-pulse">Calling {targetUser?.name}...</p>
+              {/* ভিডিও অফ থাকলে বা কানেক্ট হওয়ার আগে ব্যাকগ্রাউন্ডে প্রোফাইল শো করবে */}
+              {(isVideoOff || !callActive) && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 z-10 space-y-3">
+                  <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-primary/40 bg-muted flex items-center justify-center shadow-2xl">
+                    {targetUser?.image ? (
+                      <img src={targetUser.image} alt={targetUser.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-3xl font-bold text-primary">
+                        {targetUser?.name ? targetUser.name.slice(0, 2).toUpperCase() : "U"}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-xl font-bold text-white">{targetUser?.name || "User"}</h3>
+                  <p className="text-xs text-zinc-400 animate-pulse">
+                    {!callActive ? "Calling..." : "Camera is turned off"}
+                  </p>
                 </div>
               )}
 
-              {/* নিজের ছোট ভিডিও প্রিভিউ */}
-              <div className="absolute bottom-24 right-4 w-32 h-44 bg-zinc-900 rounded-xl overflow-hidden border-2 border-background shadow-lg">
-                <video ref={myVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+              <video ref={userVideoRef} autoPlay playsInline className={`w-full h-full object-cover ${isVideoOff ? "hidden" : ""}`} />
+
+              {/* নিজের ছোট ভিডিও প্রিভিউ (ভিডিও অফ থাকলে নিজের প্রোফাইল দেখাবে) */}
+              <div className="absolute bottom-24 right-4 w-32 h-44 bg-zinc-900 rounded-xl overflow-hidden border-2 border-background shadow-lg z-20 flex items-center justify-center">
+                {isVideoOff ? (
+                  <div className="flex flex-col items-center justify-center text-center p-2">
+                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-sm font-bold text-primary">
+                      You
+                    </div>
+                    <span className="text-[10px] text-zinc-400 mt-1">Camera Off</span>
+                  </div>
+                ) : (
+                  <video ref={myVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                )}
               </div>
             </div>
           ) : (
-            // অডিও কল UI (সুন্দর অ্যাভাতার সহ)
+            // অডিও কল UI (প্রোফাইল পিকচার সহ)
             <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-zinc-900 to-black space-y-4">
-              <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-primary/40 animate-pulse bg-muted flex items-center justify-center">
-                <span className="text-3xl font-bold text-primary">
-                  {targetUser?.name ? targetUser.name.slice(0, 2).toUpperCase() : "AC"}
-                </span>
+              <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-primary/40 animate-pulse bg-muted flex items-center justify-center shadow-2xl">
+                {targetUser?.image ? (
+                  <img src={targetUser.image} alt={targetUser.name} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-3xl font-bold text-primary">
+                    {targetUser?.name ? targetUser.name.slice(0, 2).toUpperCase() : "AC"}
+                  </span>
+                )}
               </div>
               <div className="text-center">
                 <h3 className="text-xl font-bold text-white">{targetUser?.name || "User"}</h3>
@@ -292,13 +309,11 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
                   {callActive ? "Ongoing Audio Call..." : "Calling..."}
                 </p>
               </div>
-              {/* রিমোট অডিও চালানোর জন্য হিডেন বা সাইলেন্ট অডিও এলিমেন্ট */}
-              <audio ref={userVideoRef as any} autoPlay playsInline />
             </div>
           )}
 
-          {/* কন্ট্রোল বাটনস (Mute, Video Toggle, End Call) */}
-          <div className="absolute bottom-6 flex items-center gap-4 bg-background/80 backdrop-blur-md px-6 py-3 rounded-full border shadow-lg z-10">
+          {/* কন্ট্রোল বাটনস */}
+          <div className="absolute bottom-6 flex items-center gap-4 bg-background/80 backdrop-blur-md px-6 py-3 rounded-full border shadow-lg z-30">
             <Button
               variant={isMuted ? "destructive" : "outline"}
               size="icon"

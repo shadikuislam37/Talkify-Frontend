@@ -1,3 +1,4 @@
+// ChatBox.tsx এর ফিক্সড কোড (সম্পূর্ণ প্রতিস্থাপন করুন)
 "use client";
 import { useReactionStore } from "@/store/use-reaction-store";
 import React, { useEffect, useRef, useState, useCallback } from "react";
@@ -83,19 +84,15 @@ export default function ChatBox({
         rawMessages.map(async (msg) => {
           let updatedMsg = { ...msg };
 
-          // ১. মেইন মেসেজ ডিক্রিপশন
           if (msg.body && msg.keys && msg.keys.length > 0) {
             try {
               const plainText = await decryptMessage(msg.body, msg.keys, currentUserId);
               if (plainText && !plainText.startsWith("{")) {
                 updatedMsg.body = plainText;
               }
-            } catch (err) {
-              // fallback to original
-            }
+            } catch (err) {}
           }
 
-          // 🌟 ২. রিপ্লাই করা মেসেজ ডিক্রিপশন ফিক্স
           if (msg.replyTo && msg.replyTo.body) {
             const rawReplyBody = msg.replyTo.body;
             if (rawReplyBody.trim().startsWith("{") && msg.replyTo.keys && msg.replyTo.keys.length > 0) {
@@ -286,46 +283,44 @@ export default function ChatBox({
     }
   };
 
- const handleSaveEdit = async (messageId: string) => {
-  if (!editText.trim() || !currentUserId) return;
-  try {
-    const rawText = editText.trim();
-    const members = conversation?.users || (otherUser ? [otherUser] : []);
+  const handleSaveEdit = async (messageId: string) => {
+    if (!editText.trim() || !currentUserId) return;
+    try {
+      const rawText = editText.trim();
+      const members = conversation?.users || (otherUser ? [otherUser] : []);
+      const myPublicKeyPem = currentUserPublicKey || getMyPublicKeyPem(currentUserId);
+      const recipients: Recipient[] = [];
 
-    // prop-কে অগ্রাধিকার দিন — send flow-এর মতোই reliable সোর্স
-    const myPublicKeyPem = currentUserPublicKey || getMyPublicKeyPem(currentUserId);
-    const recipients: Recipient[] = [];
-
-    if (!myPublicKeyPem) {
-      // silent fail না করে স্পষ্ট error দিন
-      setSendError("Your encryption key is unavailable. Please refresh and try again.");
-      return;
-    }
-    recipients.push({ userId: currentUserId, publicKeyPem: myPublicKeyPem });
-
-    members.forEach((m) => {
-      if (m.id !== currentUserId && m.publicKey) {
-        recipients.push({ userId: m.id, publicKeyPem: m.publicKey });
+      if (!myPublicKeyPem) {
+        setSendError("Your encryption key is unavailable. Please refresh and try again.");
+        return;
       }
-    });
+      recipients.push({ userId: currentUserId, publicKeyPem: myPublicKeyPem });
 
-    if (recipients.length === 0) return;
+      members.forEach((m) => {
+        if (m.id !== currentUserId && m.publicKey) {
+          recipients.push({ userId: m.id, publicKeyPem: m.publicKey });
+        }
+      });
 
-    const { encryptedBody, keys } = await encryptMessage(rawText, recipients);
+      if (recipients.length === 0) return;
 
-    await api.patch(`/messages/edit/${messageId}`, {
-      encryptedBody,
-      keys,
-    });
+      const { encryptedBody, keys } = await encryptMessage(rawText, recipients);
 
-    setEditingMessageId(null);
-    setEditText("");
-    queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
-  } catch (err) {
-    console.error("Failed to edit message:", err);
-    setSendError("Failed to edit message. Please try again.");
-  }
-};
+      await api.patch(`/messages/edit/${messageId}`, {
+        encryptedBody,
+        keys,
+      });
+
+      setEditingMessageId(null);
+      setEditText("");
+      queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    } catch (err) {
+      console.error("Failed to edit message:", err);
+      setSendError("Failed to edit message. Please try again.");
+    }
+  };
 
   const confirmDeleteMessage = async () => {
     if (!deletingMessageId) return;
@@ -345,6 +340,7 @@ export default function ChatBox({
           pages: oldData.pages.map((page: Message[]) => page.filter((msg) => msg.id !== deletingMessageId)),
         };
       });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
     } catch (err) {
       console.error("Failed to delete message:", err);
     } finally {
@@ -363,6 +359,7 @@ export default function ChatBox({
         socket.emit("delete_message_for_me", { messageId: deletingMessageId });
       }
 
+      // ১. চ্যাট উইন্ডো থেকে মেসেজ ফিল্টার করে বাদ দেওয়া
       queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
         if (!oldData) return oldData;
         return {
@@ -372,6 +369,10 @@ export default function ChatBox({
           ),
         };
       });
+
+      // ২. 🌟 ফিক্স: সাইডবারের কনভার্সেশন লিস্ট রিফেচ বা আপডেট করা যাতে সাইডবার থেকে প্রিভিউ আপডেট হয়ে যায়
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+
     } catch (err) {
       console.error("Failed to delete message for me:", err);
     } finally {
@@ -453,10 +454,11 @@ export default function ChatBox({
           </div>
         )}
 
+        {/* 🌟 UX ফিক্স: সম্পূর্ণ পেজে লোডিং ঘোরানোর বদলে হালকা স্কেলেটন বা ক্লিন লোডার */}
         {isLoading ? (
-          <div className="flex justify-center py-10 text-muted-foreground gap-2 m-auto">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm">Loading chat...</span>
+          <div className="flex flex-col justify-center items-center py-10 text-muted-foreground gap-2 m-auto">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <span className="text-xs">Loading messages...</span>
           </div>
         ) : decryptedMessages.length === 0 ? (
           <p className="text-center text-muted-foreground text-sm m-auto">
@@ -487,6 +489,7 @@ export default function ChatBox({
                           pages: oldData.pages.map((page: Message[]) => page.filter((m) => m.id !== msgId)),
                         };
                       });
+                      queryClient.invalidateQueries({ queryKey: ["conversations"] });
                     } catch (err) {
                       console.error("Failed to delete message for me:", err);
                     }
