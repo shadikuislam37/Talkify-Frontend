@@ -3,11 +3,15 @@
 import React, { useState, useRef } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, X, FileText, Film, Music, Smile } from "lucide-react";
+import { Send, X, FileText, Smile } from "lucide-react";
 import { sendMessageSchema } from "@/schemas/chat.schema";
 import Image from "next/image";
 import { Message } from "@/types";
 import MediaUploadButton from "./MediaUploadButton";
+
+// 🌟 ইমোজি মার্ট ইম্পোর্ট
+import Picker from "@emoji-mart/react";
+import data from "@emoji-mart/data";
 
 interface MessageInputProps {
   conversationId: string;
@@ -20,7 +24,6 @@ interface MessageInputProps {
   onTyping: (text: string) => void;
 }
 
-const COMMON_EMOJIS = ["😊", "😂", "❤️", "👍", "🔥", "🎉", "😢", "😍", "🙏", "✨"];
 const MAX_TEXTAREA_HEIGHT = 120;
 
 export const MessageInput = ({
@@ -114,9 +117,10 @@ export const MessageInput = ({
     setMediaPreview(null);
   };
 
-  const handleEmojiSelect = (emoji: string, field: any) => {
+  // 🌟 ইমোজি সিলেক্ট করার হ্যান্ডলার
+  const handleEmojiSelect = (emoji: any, field: any) => {
     const currentVal = field.state.value || "";
-    const newVal = currentVal + emoji;
+    const newVal = currentVal + emoji.native;
     field.handleChange(newVal);
     onTyping(newVal);
     if (textareaRef.current) {
@@ -220,11 +224,10 @@ export const MessageInput = ({
                 onBlur={field.handleBlur}
                 placeholder="Type a message..."
                 autoComplete="off"
-               
                 className="w-full resize-none overflow-y-auto min-h-[40px] max-h-[120px] rounded-md border border-input bg-background pl-3 pr-10 py-2.5 text-sm leading-5 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
 
-              {/* 🌟 ইনপুট বক্সের ভেতরে ইমোজি বাটন */}
+              {/* 🌟 ইমোজি বাটন ও ইমোজি মার্ট পিকার পপআপ */}
               <div className="absolute right-2 bottom-2.5 flex items-center">
                 <button
                   type="button"
@@ -235,19 +238,13 @@ export const MessageInput = ({
                   <Smile className="h-5 w-5" />
                 </button>
 
-                {/* ইমোজি পিকার পপআপ */}
                 {showEmojiPicker && (
-                  <div className="absolute bottom-full right-0 mb-2 p-2 bg-background border rounded-xl shadow-xl flex flex-wrap gap-1.5 w-64 z-50">
-                    {COMMON_EMOJIS.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        onClick={() => handleEmojiSelect(emoji, field)}
-                        className="p-1.5 hover:bg-muted rounded-lg text-lg transition-transform hover:scale-125 cursor-pointer"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
+                  <div className="absolute bottom-full right-0 mb-2 z-50 shadow-2xl rounded-2xl overflow-hidden border bg-background">
+                    <Picker
+                      data={data}
+                      onEmojiSelect={(emoji: any) => handleEmojiSelect(emoji, field)}
+                      theme="light"
+                    />
                   </div>
                 )}
               </div>
@@ -255,18 +252,18 @@ export const MessageInput = ({
           )}
         </form.Field>
 
-     <form.Subscribe selector={(state) => [state.values.body, mediaPreview]}>
-  {([body, preview]) => (
-    <Button
-      type="submit"
-      disabled={!body?.trim() && !preview}
-      size="icon"
-      className="h-10 w-10 shrink-0"
-    >
-      <Send className="h-4 w-4" />
-    </Button>
-  )}
-</form.Subscribe>
+        <form.Subscribe selector={(state) => [state.values.body, mediaPreview]}>
+          {([body, preview]) => (
+            <Button
+              type="submit"
+              disabled={!body?.trim() && !preview}
+              size="icon"
+              className="h-10 w-10 shrink-0"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
+        </form.Subscribe>
       </form>
     </div>
   );
