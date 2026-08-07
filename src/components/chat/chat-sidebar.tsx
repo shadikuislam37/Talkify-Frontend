@@ -4,10 +4,12 @@ import React, { useEffect, useState, useMemo } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Conversation } from "@/types";
 import { formatTime } from "@/lib/utils";
-import { Users, MoreVertical, Bell, BellOff, Trash2 } from "lucide-react";
+import { Users, MoreVertical, Bell, BellOff, Trash2, UserPlus } from "lucide-react";
 import { socket } from "@/lib/socket";
 import { decryptMessage } from "@/lib/crypto";
 import { api } from "@/lib/api";
+import { useMessageRequests } from "@/hooks/useMessageRequests"; // 🌟 হুক ইম্পোর্ট করা হলো
+import { MessageRequestsTab } from "@/components/MessageRequestsTab"; // 🌟 কম্পোনেন্ট ইম্পোর্ট করা হলো
 
 interface ChatSidebarProps {
   conversations: Conversation[];
@@ -32,6 +34,10 @@ export default function ChatSidebar({
 
   const [decryptedPreviews, setDecryptedPreviews] = useState<Record<string, string>>({});
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  // 🌟 নতুন স্টেট: সাইডবারে ট্যাব স্যুইচ করার জন্য ("chats" | "requests")
+  const [activeTab, setActiveTab] = useState<"chats" | "requests">("chats");
+  const { pendingRequests } = useMessageRequests(); // পেন্ডিং রিকোয়েস্ট লিস্ট ও কাউন্টের জন্য
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -111,8 +117,42 @@ export default function ChatSidebar({
 
   return (
     <div className="w-full h-full flex flex-col bg-background">
+      {/* 🌟 নতুন যোগ করা ট্যাব হেডার (Chats এবং Message Requests স্যুইচ করার জন্য) */}
+      <div className="flex border-b border-border p-2 gap-2 shrink-0">
+        <button
+          onClick={() => setActiveTab("chats")}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+            activeTab === "chats"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "bg-muted/50 text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          Chats ({safeConversations.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab("requests")}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center justify-center gap-1.5 ${
+            activeTab === "requests"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "bg-muted/50 text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          <UserPlus size={13} />
+          Requests
+          {pendingRequests.length > 0 && (
+            <span className="bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.2 rounded-full font-bold">
+              {pendingRequests.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* 🌟 কন্ডিশনাল রেন্ডারিং: ট্যাব অনুযায়ী চ্যাট লিস্ট অথবা মেসেজ রিকোয়েস্ট লিস্ট দেখাবে */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
-        {safeConversations.length === 0 ? (
+        {activeTab === "requests" ? (
+          <MessageRequestsTab />
+        ) : safeConversations.length === 0 ? (
           <p className="text-xs text-center text-muted-foreground py-8">
             No conversations found
           </p>
@@ -236,7 +276,7 @@ export default function ChatSidebar({
                   </div>
                 </div>
 
-                {/* 🌟 রেসপন্সিভ থ্রি-ডট মেনু (মোবাইলে সবসময় দেখাবে, ল্যাপটপে হোভারে দেখাবে) */}
+                {/* 🌟 রেসপন্সিভ থ্রি-ডট মেনু (মোবাইলে সবসময় দেখাবে, ল্যাপটপে হোভারে দেখাবে) */}
                 <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => setOpenMenuId(isMenuOpen ? null : conv.id)}

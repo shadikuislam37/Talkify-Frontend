@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -57,27 +57,37 @@ export default function GroupDetailsModal({
   const isCurrentUserAdmin = currentUserId ? adminIds.includes(currentUserId) : false;
   const nonMembers = allUsers.filter((u) => !members.some((m) => m.id === u.id));
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // গ্রুপ ছবি আপলোড হ্যান্ডলার
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
+      const file = e.target.files?.[0];
+      if (!file) return;
+  
       setIsUploading(true);
       const formData = new FormData();
-      formData.append("file", file);
-
-      const res: any = await mediaApi.post("/media/upload", formData);
-      const uploadedUrl = res.url || res.data?.url;
-      if (uploadedUrl) {
-        setImage(uploadedUrl);
+      formData.append("files", file);
+  
+      try {
+        const res = await mediaApi.post("/media/upload", formData);
+  
+        if (res.data?.success && res.data?.data?.[0]?.fileUrl) {
+          setImage(res.data.data[0].fileUrl);
+        } else {
+          alert(res.data?.message || "Failed to upload image.");
+        }
+      } catch (error: any) {
+        console.error("Upload error:", error);
+        alert(
+          error.response?.data?.message ||
+          error.message ||
+          "Something went wrong while uploading!"
+        );
+      } finally {
+        setIsUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }
-    } catch (error) {
-      console.error("Failed to upload group image", error);
-    } finally {
-      setIsUploading(false);
-    }
-  };
+    };
 
   // গ্রুপ নাম ও ছবি সেভ হ্যান্ডলার
   const handleSaveGroupDetails = async () => {

@@ -100,13 +100,16 @@ export interface Message {
 
   // Reply Feature
   replyToId?: string | null;
-  replyTo?: {
-    id: string;
-    body?: string | null;
-    senderName?: string;
-    sender?: AuthUser;
-    keys?: { userId: string; encryptedKey: string }[]; // 🌟 টাইপ এরর ফিক্স করতে keys যোগ করা হলো
-  } | Message | null;
+  replyTo?:
+    | {
+        id: string;
+        body?: string | null;
+        senderName?: string;
+        sender?: AuthUser;
+        keys?: { userId: string; encryptedKey: string }[]; // 🌟 টাইপ এরর ফিক্স করতে keys যোগ করা হলো
+      }
+    | Message
+    | null;
   replies?: Message[];
 
   // 🌟 Delete For Me Support
@@ -143,7 +146,7 @@ export interface Conversation {
   adminIds?: string[];
   createdAt?: string | Date;
   updatedAt?: string | Date;
-theme?: string | null; 
+  theme?: string | null;
   users?: AuthUser[];
   messages?: Message[];
 
@@ -154,7 +157,8 @@ theme?: string | null;
 // ৭. UI & WebRTC Call Props
 // ==========================================
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }
@@ -173,4 +177,11 @@ export interface CallState {
   startCall: (targetUser: CallState["targetUser"]) => void;
   acceptCall: () => void;
   endCall: () => void;
+}
+
+
+
+export interface GroupCreationMember extends AuthUser {
+  isSelected?: boolean;
+  isAcceptedConnection?: boolean; // ফ্রেন্ড রিকোয়েস্ট এক্সেপ্ট করা আছে কি না
 }

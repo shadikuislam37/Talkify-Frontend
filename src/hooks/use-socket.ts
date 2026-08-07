@@ -3,6 +3,8 @@ import { socket } from "@/lib/socket";
 import { useQueryClient } from "@tanstack/react-query";
 import { playNotificationSound, sendPushNotification } from "@/lib/notification";
 import { Message } from "@/types";
+import { toast } from "sonner";
+import { useChatStore } from "@/store/use-chat-store";
 
 export function useSocket(
   conversationId?: string,
@@ -21,6 +23,7 @@ export function useSocket(
   onUserOffline?: (data: { userId: string; lastSeen: Date }) => void
 ) {
   const queryClient = useQueryClient();
+  const { addMessageRequest } = useChatStore(); // 🌟 ইনস্ট্যান্ট অপ্টিমিস্টিক আপডেটের জন্য
 
   useEffect(() => {
     if (!socket.connected) {
@@ -212,7 +215,7 @@ export function useSocket(
     const handleTypingStart = (data: any) => { if (onTypingStart) onTypingStart(data); };
     const handleTypingStop = (data: any) => { if (onTypingStop) onTypingStop(data); };
 
-  const handleMessageStatusChange = (data: { messageId?: string; conversationId: string; status: string; userId?: string }) => {
+    const handleMessageStatusChange = (data: { messageId?: string; conversationId: string; status: string; userId?: string }) => {
       if (onMessageStatusChange) onMessageStatusChange(data);
 
       // 🌟 ইনস্ট্যান্ট ক্যাশ আপডেট: সার্ভারের রেসপন্সের জন্য অপেক্ষা না করে সাথে সাথে ডাবল ব্লু টিক দেখানোর জন্য
@@ -223,7 +226,7 @@ export function useSocket(
           ...oldData,
           pages: oldData.pages.map((page: Message[]) =>
             page.map((msg) => {
-              // যদি নির্দিষ্ট কোনো মেসেজ আইডি আসে অথবা ওই কনভার্সেশনের আগের সব মেসেজ হয়ে থাকে
+              // যদি নির্দিষ্ট কোনো মেসেজ আইডি আসে অথবা ওই কনভার্সেশনের আগের সব মেসেজ হয়ে থাকে
               const isTargetMessage = data.messageId ? msg.id === data.messageId : true;
               
               if (isTargetMessage && String(msg.senderId) === String(currentUserId)) {
@@ -250,18 +253,43 @@ export function useSocket(
     const handleUserOnline = (data: any) => { if (onUserOnline) onUserOnline(data); };
     const handleUserOffline = (data: any) => { if (onUserOffline) onUserOffline(data); };
 
-const handleThemeChange = (data: { conversationId: string; theme: string }) => {
-  // কনভার্সেশন লিস্ট এবং নির্দিষ্ট চ্যাটের ডেটা ইনস্ট্যান্ট ক্যাশে আপডেট করা
-  queryClient.setQueryData(["conversations"], (old: any) => {
-    if (!old) return old;
-    return old.map((conv: any) => 
-      conv.id === data.conversationId ? { ...conv, theme: data.theme } : conv
-    );
-  });
-  
-  queryClient.invalidateQueries({ queryKey: ["conversations"] });
-};
+    const handleThemeChange = (data: { conversationId: string; theme: string }) => {
+      // কনভার্সেশন লিস্ট এবং নির্দিষ্ট চ্যাটের ডেটা ইনস্ট্যান্ট ক্যাশে আপডেট করা
+      queryClient.setQueryData(["conversations"], (old: any) => {
+        if (!old) return old;
+        return old.map((conv: any) => 
+          conv.id === data.conversationId ? { ...conv, theme: data.theme } : conv
+        );
+      });
+      
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    };
 
+    // =========================================================================
+    // 🌟 ৬. Message Request Optimistic Real-Time Handlers (নতুন যোগ করা অংশ)
+    // =========================================================================
+    const handleReceiveMessageRequest = (newRequest: any) => {
+      playNotificationSound();
+      toast.info(`${newRequest.sender?.name || "Someone"} sent you a message request!`);
+      
+      addMessageRequest(newRequest);
+
+      queryClient.setQueryData(["pending-message-requests"], (old: any = []) => {
+        if (!Array.isArray(old)) return [newRequest];
+        if (old.some((req: any) => req.id === newRequest.id)) return old;
+        return [newRequest, ...old];
+      });
+
+      queryClient.invalidateQueries({ queryKey: ["pending-message-requests"] });
+    };
+
+    const handleMessageRequestResponse = (response: { requestId: string; status: "ACCEPTED" | "REJECTED"; acceptedBy: any }) => {
+      if (response.status === "ACCEPTED") {
+        toast.success(`${response.acceptedBy.name} accepted your message request!`);
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      }
+    };
+    // =========================================================================
 
     // 🌟 সমস্ত ইভেন্ট লিসেনার রেজিস্টার
     socket.on("receive_message", handleReceiveMessage);
@@ -285,6 +313,10 @@ const handleThemeChange = (data: { conversationId: string; theme: string }) => {
 
     socket.on("theme_changed", handleThemeChange);
 
+    // 🌟 Message Request Listeners
+    socket.on("receive_message_request", handleReceiveMessageRequest);
+    socket.on("message_request_response", handleMessageRequestResponse);
+
     // 🌟 ক্লিনআপ
     return () => {
       socket.off("connect", joinRoom);
@@ -306,7 +338,12 @@ const handleThemeChange = (data: { conversationId: string; theme: string }) => {
       socket.off("on_group_updated", handleGroupUpdated);
       socket.off("user_online", handleUserOnline);
       socket.off("user_offline", handleUserOffline);
-socket.off("theme_changed", handleThemeChange);
+      socket.off("theme_changed", handleThemeChange);
+
+      // Message Request Cleanups
+      socket.off("receive_message_request", handleReceiveMessageRequest);
+      socket.off("message_request_response", handleMessageRequestResponse);
+
       if (conversationId && socket.connected) {
         socket.emit("leave_conversation", { conversationId });
       }
@@ -315,6 +352,7 @@ socket.off("theme_changed", handleThemeChange);
     conversationId,
     currentUserId,
     queryClient,
+    addMessageRequest,
     onCallOffer,
     onCallAnswer,
     onIceCandidate,

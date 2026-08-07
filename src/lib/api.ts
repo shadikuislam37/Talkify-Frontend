@@ -1,5 +1,4 @@
 import axios, { AxiosError, AxiosRequestConfig } from "axios";
-import { toast } from "sonner";
 
 // প্রক্সি পাথ ব্যবহার করছি
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/backend-api";
@@ -14,30 +13,15 @@ export class ApiError extends Error {
   }
 }
 
-// Axios ইন্সট্যান্স তৈরি   headers: {
-  //   "Content-Type": "application/json",
-  // },
+// Axios ইন্সট্যান্স তৈরি
 const axiosInstance = axios.create({
   baseURL: API_URL,
   withCredentials: true,
- 
- 
 });
 
-// Response Interceptor
+// Response Interceptor (টোস্ট মুক্ত এবং ক্লিন)
 axiosInstance.interceptors.response.use(
   (response) => {
-    // 🌟 ২. যেকোনো Successful Mutation (POST, PUT, PATCH, DELETE)-এ যদি ব্যাকএন্ড থেকে message আসে, তবে অটো Toast দেখাবে
-    const method = response.config.method?.toLowerCase();
-    const data = response.data as any;
-
-    if (method && method !== "get") {
-      const successMessage = data?.message || data?.data?.message;
-      if (successMessage && typeof successMessage === "string") {
-        toast.success(successMessage);
-      }
-    }
-
     return response.data; // ইন্টারসেপ্টর সরাসরি ডাটা রিটার্ন করবে
   },
   (error: AxiosError) => {
@@ -58,12 +42,6 @@ axiosInstance.interceptors.response.use(
             data.errorMessage)) ||
         (typeof data === "string" && data.slice(0, 200)) ||
         `Request failed with status ${error.response.status}`;
-    }
-
-    // 🌟 ৩. গ্লোবালি এরর দেখালেই স্বয়ংক্রিয়ভাবে Red Toast পপ-আপ হবে!
-    // (নোট: 401 Unauthenticated এররের ক্ষেত্রে অনেক সময় টোস্ট না দেখিয়ে সাইন-ইনে রিডাইরেক্ট করানো ভালো)
-    if (status !== 401) {
-      toast.error(String(message));
     }
 
     throw new ApiError(String(message), status);
@@ -132,9 +110,8 @@ export function getErrorMessage(error: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-
 const mediaApi = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_BACKEND_URL, // https://api.talkify.me
+  baseURL: process.env.NEXT_PUBLIC_BACKEND_URL,
   withCredentials: true,
 });
 

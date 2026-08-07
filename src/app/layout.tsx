@@ -4,7 +4,6 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import QueryProvider from "@/providers/query-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
-
 const inter = Inter({ 
   subsets: ["latin"], 
   variable: "--font-sans" 

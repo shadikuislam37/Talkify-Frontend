@@ -191,12 +191,3 @@
 }
 
 
-/* আটকে থাকা লোডিং স্পিনার হাইড করার জন্য */
-svg.animate-spin.h-4.w-4 {
-  display: none !important;
-}
-
-/* অথবা যদি নিচের ক্লাসটি কাজ না করে, তবে এটি ব্যবহার করতে পারেন: */
-.flex.items-center.gap-1 svg.animate-spin {
-  display: none !important;
-}
