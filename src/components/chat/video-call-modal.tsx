@@ -58,8 +58,10 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
         audio: { echoCancellation: true, noiseSuppression: true },
       });
       localStreamRef.current = stream;
-      if (videoEnabled && myVideoRef.current) {
+      
+      if (myVideoRef.current) {
         myVideoRef.current.srcObject = stream;
+        myVideoRef.current.play().catch((e) => console.error("Local video play error:", e));
       }
       return stream;
     } catch (err) {
@@ -67,6 +69,13 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       return null;
     }
   };
+
+  useEffect(() => {
+    if (myVideoRef.current && localStreamRef.current) {
+      myVideoRef.current.srcObject = localStreamRef.current;
+      myVideoRef.current.play().catch((e) => console.error("Local video effect play error:", e));
+    }
+  }, [callActive, isCalling, isVideoOff]);
 
   const createPeerConnection = (targetUserId: string) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -78,7 +87,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       });
     }
 
-    // 🌟 রিমোট ট্র্যাক ও অডিও-ভিডিও সিঙ্ক ফিক্স (যাতে উভয় পক্ষ থেকে সাউন্ড শোনা যায়)
     pc.ontrack = (event) => {
       const remoteStream = event.streams[0];
       
@@ -97,6 +105,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       if (event.candidate) {
         socket.emit("ice_candidate", {
           targetUserId,
+          from: currentUserId,
           candidate: event.candidate,
         });
       }
@@ -117,6 +126,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
         socket.emit("call_offer", {
           targetUserId: targetUser.id,
+          from: currentUserId,
           name: targetUser.name || "Caller",
           image: targetUser.image || "",
           sdp: offer,
@@ -124,7 +134,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
         });
       })();
     }
-  }, [isCalling, isVideoCall, targetUser, socket]);
+  }, [isCalling, isVideoCall, targetUser, socket, currentUserId]);
 
   useEffect(() => {
     if (!socket) return;
@@ -172,6 +182,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
     socket.emit("call_answer", {
       targetUserId: incomingCall.from,
+      from: currentUserId,
       sdp: answer,
     });
 
@@ -199,7 +210,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   const handleEndCall = () => {
     const targetId = targetUser?.id || incomingCall?.from;
     if (targetId && socket) {
-      socket.emit("end_call", { targetUserId: targetId });
+      socket.emit("end_call", { targetUserId: targetId, from: currentUserId });
     }
     handleCleanup();
   };
@@ -207,8 +218,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   if (!isCalling && !incomingCall && !callActive) return null;
 
   const activeCallTypeVideo = callActive ? isVideoCall : (incomingCall?.isVideo ?? true);
-  
-  // 🌟 ফিক্স: ইউজারের সঠিক নাম ও ছবি নিশ্চিত করা হলো যাতে "AC" বা "User" না দেখায়
   const activeUser = targetUser || (incomingCall ? { id: incomingCall.from, name: incomingCall.name || "User", image: incomingCall.image } : null);
 
   return (
@@ -246,7 +255,9 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
           {activeCallTypeVideo ? (
             <div className="relative w-full h-full flex items-center justify-center bg-black">
-              {(isVideoOff || !callActive) && (
+              <video ref={userVideoRef} autoPlay playsInline className={`w-full h-full object-cover ${isVideoOff && callActive ? "hidden" : ""}`} />
+
+              {(!callActive || isVideoOff) && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 z-10 space-y-3">
                   <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-primary/40 bg-muted flex items-center justify-center shadow-2xl">
                     {activeUser?.image ? (
@@ -263,8 +274,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
                   </p>
                 </div>
               )}
-
-              <video ref={userVideoRef} autoPlay playsInline className={`w-full h-full object-cover ${isVideoOff ? "hidden" : ""}`} />
 
               <div className="absolute bottom-24 right-4 w-32 h-44 bg-zinc-900 rounded-xl overflow-hidden border-2 border-background shadow-lg z-20 flex items-center justify-center">
                 {isVideoOff ? (
