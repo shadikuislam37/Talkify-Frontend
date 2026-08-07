@@ -26,7 +26,7 @@ export function UserSearch({
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(query.trim());
-    }, 300);
+    }, 100);
     return () => clearTimeout(timer);
   }, [query]);
 

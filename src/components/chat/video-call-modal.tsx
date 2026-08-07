@@ -58,7 +58,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
         audio: { echoCancellation: true, noiseSuppression: true },
       });
       localStreamRef.current = stream;
-      
       if (myVideoRef.current) {
         myVideoRef.current.srcObject = stream;
         myVideoRef.current.play().catch((e) => console.error("Local video play error:", e));
@@ -87,17 +86,18 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       });
     }
 
+    // 🌟 রিসিভার ও কলার উভয়ের জন্যই রিমোট সাউন্ড এবং ভিডিও প্লে নিশ্চিত করা
     pc.ontrack = (event) => {
       const remoteStream = event.streams[0];
       
       if (remoteAudioRef.current) {
         remoteAudioRef.current.srcObject = remoteStream;
-        remoteAudioRef.current.play().catch((e) => console.error("Audio play error:", e));
+        remoteAudioRef.current.play().catch((e) => console.error("Remote Audio play error:", e));
       }
 
       if (userVideoRef.current) {
         userVideoRef.current.srcObject = remoteStream;
-        userVideoRef.current.play().catch((e) => console.error("Video play error:", e));
+        userVideoRef.current.play().catch((e) => console.error("Remote Video play error:", e));
       }
     };
 
@@ -114,6 +114,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     return pc;
   };
 
+  // কলার সাইড থেকে অফার পাঠানো
   useEffect(() => {
     if (isCalling && targetUser) {
       (async () => {
@@ -136,6 +137,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     }
   }, [isCalling, isVideoCall, targetUser, socket, currentUserId]);
 
+  // সকেট ইভেন্ট লিসენার
   useEffect(() => {
     if (!socket) return;
 
@@ -167,6 +169,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     };
   }, [socket, handleCleanup, acceptCall]);
 
+  // 🌟 রিসিভার যখন কল রিসিভ বা অ্যাক্সেপ্ট করবে
   const handleAccept = async () => {
     if (!incomingCall) return;
 
@@ -218,7 +221,9 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   if (!isCalling && !incomingCall && !callActive) return null;
 
   const activeCallTypeVideo = callActive ? isVideoCall : (incomingCall?.isVideo ?? true);
-  const activeUser = targetUser || (incomingCall ? { id: incomingCall.from, name: incomingCall.name || "User", image: incomingCall.image } : null);
+  
+  // 🌟 ফিক্স: কলার বা রিসিভার উভয়ের জন্যই সঠিক নাম ও ছবি ম্যাপ করা হলো যাতে "AC" বা "User" না দেখায়
+  const activeUser = targetUser?.name ? targetUser : (incomingCall ? { id: incomingCall.from, name: incomingCall.name || "User", image: incomingCall.image } : null);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4">

@@ -1,11 +1,10 @@
-// ChatBox.tsx এর ফিক্সড কোড (সম্পূর্ণ প্রতিস্থাপন করুন)
 "use client";
 import { useReactionStore } from "@/store/use-reaction-store";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { socket } from "@/lib/socket";
 import { useMessage } from "@/hooks/use-messages";
-import { Loader2, Info, Video, Phone, Check, X } from "lucide-react";
+import { Loader2, Info, Video, Phone, Check, X, Palette } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +17,8 @@ import { formatLastSeen } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { MessageInput } from "./message-input";
 import { decryptMessage, encryptMessage, getMyPublicKeyPem, Recipient } from "@/lib/crypto";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ThemePicker } from "./theme-picker";
 
 interface ChatBoxProps {
   conversationId: string;
@@ -27,6 +28,8 @@ interface ChatBoxProps {
   conversation?: Conversation;
   availableUsers?: AuthUser[];
 }
+
+
 
 export default function ChatBox({
   conversationId,
@@ -82,17 +85,21 @@ export default function ChatBox({
 
       const processed = await Promise.all(
         rawMessages.map(async (msg) => {
-          let updatedMsg = { ...msg };
+          const updatedMsg = { ...msg };
 
+          // ১. মেইন মেসেজ ডিক্রিপশন
           if (msg.body && msg.keys && msg.keys.length > 0) {
             try {
               const plainText = await decryptMessage(msg.body, msg.keys, currentUserId);
               if (plainText && !plainText.startsWith("{")) {
                 updatedMsg.body = plainText;
               }
-            } catch (err) {}
+            } catch (err) {
+              // fallback to original
+            }
           }
 
+          // 🌟 ২. রিপ্লাই করা মেসেজ ডিক্রিপশন ফিক্স
           if (msg.replyTo && msg.replyTo.body) {
             const rawReplyBody = msg.replyTo.body;
             if (rawReplyBody.trim().startsWith("{") && msg.replyTo.keys && msg.replyTo.keys.length > 0) {
@@ -159,6 +166,9 @@ export default function ChatBox({
       setTimeout(() => setHighlightedMsgId(null), 2000);
     }
   };
+
+  
+
 
   const handleStartAudioCall = () => {
     if (!otherUser) return;
@@ -288,6 +298,7 @@ export default function ChatBox({
     try {
       const rawText = editText.trim();
       const members = conversation?.users || (otherUser ? [otherUser] : []);
+
       const myPublicKeyPem = currentUserPublicKey || getMyPublicKeyPem(currentUserId);
       const recipients: Recipient[] = [];
 
@@ -315,7 +326,6 @@ export default function ChatBox({
       setEditingMessageId(null);
       setEditText("");
       queryClient.invalidateQueries({ queryKey: ["messages", conversationId] });
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
     } catch (err) {
       console.error("Failed to edit message:", err);
       setSendError("Failed to edit message. Please try again.");
@@ -340,7 +350,6 @@ export default function ChatBox({
           pages: oldData.pages.map((page: Message[]) => page.filter((msg) => msg.id !== deletingMessageId)),
         };
       });
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
     } catch (err) {
       console.error("Failed to delete message:", err);
     } finally {
@@ -359,7 +368,6 @@ export default function ChatBox({
         socket.emit("delete_message_for_me", { messageId: deletingMessageId });
       }
 
-      // ১. চ্যাট উইন্ডো থেকে মেসেজ ফিল্টার করে বাদ দেওয়া
       queryClient.setQueryData(["messages", conversationId], (oldData: any) => {
         if (!oldData) return oldData;
         return {
@@ -369,10 +377,6 @@ export default function ChatBox({
           ),
         };
       });
-
-      // ২. 🌟 ফিক্স: সাইডবারের কনভার্সেশন লিস্ট রিফেচ বা আপডেট করা যাতে সাইডবার থেকে প্রিভিউ আপডেট হয়ে যায়
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
-
     } catch (err) {
       console.error("Failed to delete message for me:", err);
     } finally {
@@ -384,7 +388,7 @@ export default function ChatBox({
   const typingUserNames = Object.values(typingUsers);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden border rounded-md bg-background relative">
+    <div className={`flex flex-col h-full overflow-hidden border rounded-md bg-background relative ${conversation?.theme || "theme-default"}`}>
       <div className="flex items-center justify-between border-b p-4 shrink-0">
         <div
           onClick={() => conversation?.isGroup && setIsGroupDetailsOpen(true)}
@@ -433,6 +437,18 @@ export default function ChatBox({
               <Info className="h-4 w-4" />
             </Button>
           )}
+
+          {/* 🌟 পার্সোনাল এবং গ্রুপ উভয় চ্যাটের জন্যই থিম পরিবর্তনের অপশন */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Change Chat Theme">
+                <Palette className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-2" align="end">
+              <ThemePicker conversationId={conversationId} />
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
@@ -454,11 +470,10 @@ export default function ChatBox({
           </div>
         )}
 
-        {/* 🌟 UX ফিক্স: সম্পূর্ণ পেজে লোডিং ঘোরানোর বদলে হালকা স্কেলেটন বা ক্লিন লোডার */}
         {isLoading ? (
-          <div className="flex flex-col justify-center items-center py-10 text-muted-foreground gap-2 m-auto">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            <span className="text-xs">Loading messages...</span>
+          <div className="flex justify-center py-10 text-muted-foreground gap-2 m-auto">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Loading chat...</span>
           </div>
         ) : decryptedMessages.length === 0 ? (
           <p className="text-center text-muted-foreground text-sm m-auto">
@@ -489,7 +504,6 @@ export default function ChatBox({
                           pages: oldData.pages.map((page: Message[]) => page.filter((m) => m.id !== msgId)),
                         };
                       });
-                      queryClient.invalidateQueries({ queryKey: ["conversations"] });
                     } catch (err) {
                       console.error("Failed to delete message for me:", err);
                     }

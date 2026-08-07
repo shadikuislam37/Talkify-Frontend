@@ -212,8 +212,32 @@ export function useSocket(
     const handleTypingStart = (data: any) => { if (onTypingStart) onTypingStart(data); };
     const handleTypingStop = (data: any) => { if (onTypingStop) onTypingStop(data); };
 
-    const handleMessageStatusChange = (data: any) => {
+  const handleMessageStatusChange = (data: { messageId?: string; conversationId: string; status: string; userId?: string }) => {
       if (onMessageStatusChange) onMessageStatusChange(data);
+
+      // 🌟 ইনস্ট্যান্ট ক্যাশ আপডেট: সার্ভারের রেসপন্সের জন্য অপেক্ষা না করে সাথে সাথে ডাবল ব্লু টিক দেখানোর জন্য
+      queryClient.setQueryData(["messages", data.conversationId], (oldData: any) => {
+        if (!oldData || !oldData.pages) return oldData;
+
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page: Message[]) =>
+            page.map((msg) => {
+              // যদি নির্দিষ্ট কোনো মেসেজ আইডি আসে অথবা ওই কনভার্সেশনের আগের সব মেসেজ হয়ে থাকে
+              const isTargetMessage = data.messageId ? msg.id === data.messageId : true;
+              
+              if (isTargetMessage && String(msg.senderId) === String(currentUserId)) {
+                return {
+                  ...msg,
+                  status: data.status || "READ",
+                };
+              }
+              return msg;
+            })
+          ),
+        };
+      });
+
       queryClient.invalidateQueries({ queryKey: ["messages", data.conversationId] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     };
@@ -225,6 +249,19 @@ export function useSocket(
 
     const handleUserOnline = (data: any) => { if (onUserOnline) onUserOnline(data); };
     const handleUserOffline = (data: any) => { if (onUserOffline) onUserOffline(data); };
+
+const handleThemeChange = (data: { conversationId: string; theme: string }) => {
+  // কনভার্সেশন লিস্ট এবং নির্দিষ্ট চ্যাটের ডেটা ইনস্ট্যান্ট ক্যাশে আপডেট করা
+  queryClient.setQueryData(["conversations"], (old: any) => {
+    if (!old) return old;
+    return old.map((conv: any) => 
+      conv.id === data.conversationId ? { ...conv, theme: data.theme } : conv
+    );
+  });
+  
+  queryClient.invalidateQueries({ queryKey: ["conversations"] });
+};
+
 
     // 🌟 সমস্ত ইভেন্ট লিসেনার রেজিস্টার
     socket.on("receive_message", handleReceiveMessage);
@@ -245,6 +282,8 @@ export function useSocket(
     socket.on("on_group_updated", handleGroupUpdated);
     socket.on("user_online", handleUserOnline);
     socket.on("user_offline", handleUserOffline);
+
+    socket.on("theme_changed", handleThemeChange);
 
     // 🌟 ক্লিনআপ
     return () => {
@@ -267,7 +306,7 @@ export function useSocket(
       socket.off("on_group_updated", handleGroupUpdated);
       socket.off("user_online", handleUserOnline);
       socket.off("user_offline", handleUserOffline);
-
+socket.off("theme_changed", handleThemeChange);
       if (conversationId && socket.connected) {
         socket.emit("leave_conversation", { conversationId });
       }

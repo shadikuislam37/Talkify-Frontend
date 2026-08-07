@@ -2,12 +2,12 @@ import { create } from "zustand";
 
 interface CallState {
   isCalling: boolean;
-  incomingCall: { from: string; name: string; sdp: any; isVideo?: boolean } | null;
+  incomingCall: { from: string; name: string; sdp: any; isVideo?: boolean; image?: string } | null;
   callActive: boolean;
   targetUser: { id: string; name: string; image?: string } | null;
-  isVideoCall: boolean; // 🌟 কলটি ভিডিও নাকি অডিও তা ট্র্যাক করবে
-  setIncomingCall: (call: { from: string; name: string; sdp: any; isVideo?: boolean } | null) => void;
-  startCall: (targetUser: { id: string; name: string; image?: string }, isVideo: boolean) => void; // 🌟 isVideo প্যারামিটার যুক্ত করা হয়েছে
+  isVideoCall: boolean; 
+  setIncomingCall: (call: { from: string; name: string; sdp: any; isVideo?: boolean; image?: string } | null) => void;
+  startCall: (targetUser: { id: string; name: string; image?: string }, isVideo: boolean) => void; 
   acceptCall: () => void;
   endCall: () => void;
 }

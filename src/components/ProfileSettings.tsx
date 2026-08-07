@@ -5,9 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Loader2, Camera } from "lucide-react";
-import { mediaApi } from "@/lib/api"; // 🌟 raw axios instance (interceptor ছাড়া) — direct backend call
+import { Loader2, Camera, ShieldCheck } from "lucide-react";
+import { mediaApi } from "@/lib/api";
 import Image from "next/image";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import ActiveDevicesModal from "./ActiveDevicesModal";
 
 interface ProfileSettingsProps {
   currentName?: string;
@@ -29,19 +31,18 @@ export default function ProfileSettingsModal({
   const { mutate: updateProfile, isPending: isUpdatingProfile } = useUpdateProfile();
   const { mutate: toggleStatus, isPending: isTogglingStatus } = useToggleActiveStatus();
 
-  // 🌟 ছবি আপলোডের ফাংশন (ফিক্সড — mediaApi এর raw response structure অনুযায়ী)
+  // ছবি আপলোডের ফাংশন
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsUploading(true);
     const formData = new FormData();
-    formData.append("files", file); // ব্যাকএন্ডের upload.array('files') এর সাথে মিল রেখে
+    formData.append("files", file);
 
     try {
       const res = await mediaApi.post("/media/upload", formData);
 
-      // 🌟 mediaApi raw axios response দেয়, তাই res.data হচ্ছে ব্যাকএন্ডের পুরো body
       if (res.data?.success && res.data?.data?.[0]?.fileUrl) {
         setImage(res.data.data[0].fileUrl);
       } else {
@@ -107,7 +108,7 @@ export default function ProfileSettingsModal({
             type="button" 
             variant="outline" 
             size="sm" 
-            className="text-xs"
+            className="text-xs cursor-pointer"
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
           >
@@ -133,7 +134,7 @@ export default function ProfileSettingsModal({
           />
         </div>
 
-        <Button type="submit" disabled={isUpdatingProfile || isUploading} className="w-full">
+        <Button type="submit" disabled={isUpdatingProfile || isUploading} className="w-full cursor-pointer">
           {isUpdatingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : "Update Profile"}
         </Button>
       </form>
@@ -149,6 +150,24 @@ export default function ProfileSettingsModal({
           disabled={isTogglingStatus}
           onCheckedChange={handleToggleStatus}
         />
+      </div>
+
+      {/* 🌟 সিকিউরিটি সেকশন: একটিভ ডিভাইস ও লগইন হিস্ট্রি মডাল ট্রিগার */}
+      <div className="pt-2 border-t">
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button variant="outline" className="w-full text-xs flex items-center gap-2 cursor-pointer h-10">
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              Active Devices & Login History
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Where You&apos;re Logged In</DialogTitle>
+            </DialogHeader>
+            <ActiveDevicesModal />
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

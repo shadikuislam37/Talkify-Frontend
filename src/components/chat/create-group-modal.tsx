@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Users, Search, X } from "lucide-react";
-import { useMessage } from "@/hooks/use-messages";
 import { AuthUser } from "@/types";
 import { CreateGroupInput } from "@/schemas/chat.schema";
 import { useCreateGroupChat } from "@/hooks/use-conversations";

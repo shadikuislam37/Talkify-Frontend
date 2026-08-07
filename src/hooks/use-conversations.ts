@@ -18,7 +18,6 @@ export const useCreateOrGetOneToOne = () => {
   return useMutation({
     mutationFn: async (targetUserId: string) => {
       const res: any = await api.post("/conversations/one-to-one", { targetUserId });
-      // 🌟 ফিক্স: ব্যাকএন্ড এনভেলাপ বা ডিরেক্ট অবজেক্ট যাই হোক না কেন, সঠিক ডাটা রিটার্ন করবে
       return res?.data ?? res;
     },
     onSuccess: () => {
@@ -27,14 +26,19 @@ export const useCreateOrGetOneToOne = () => {
   });
 };
 
+// 🌟 গ্রুপ তৈরির সাথে সাথে সাইডবারে ইনস্ট্যান্ট দেখানোর জন্য Optimistic Cache Update
 export const useCreateGroupChat = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: { name: string; userIds: string[]; image?: string }) => {
-      const res = await api.post("/conversations/group", data);
-      return res;
+      const res: any = await api.post("/conversations/group", data);
+      return res?.data ?? res;
     },
-    onSuccess: () => {
+    onSuccess: (newConversation) => {
+      queryClient.setQueryData(["conversations"], (old: any[] | undefined) => {
+        if (!old) return [newConversation];
+        return [newConversation, ...old];
+      });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     },
   });
@@ -71,7 +75,7 @@ export const useAddGroupMember = () => {
     }: {
       conversationId: string;
       userIds: string[];
-      currentUserId: string;
+      currentUserId?: string;
     }) => {
       const res = await api.patch(`/conversations/${conversationId}/members`, { userIds });
       return res;
@@ -139,6 +143,44 @@ export const useMakeGroupAdmin = () => {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["conversations", variables.conversationId] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+};
+
+
+// 🌟 চ্যাট থিম আপডেট করার মিউটেশন হুক
+export const useUpdateChatTheme = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (variables: { conversationId: string; theme: string }) => {
+      const res: any = await api.patch(`/conversations/${variables.conversationId}/theme`, { 
+        theme: variables.theme 
+      });
+      return res?.data ?? res;
+    },
+    // 🌟 ইনস্ট্যান্ট ক্যাশ আপডেট (Optimistic Update)
+    onMutate: async ({ conversationId, theme }) => {
+      await queryClient.cancelQueries({ queryKey: ["conversations"] });
+      
+      const previousConversations = queryClient.getQueryData(["conversations"]);
+
+      queryClient.setQueryData(["conversations"], (old: any) => {
+        if (!old) return old;
+        return old.map((conv: any) => 
+          conv.id === conversationId ? { ...conv, theme } : conv
+        );
+      });
+
+      return { previousConversations };
+    },
+    onError: (_err, _variables, context: any) => {
+      if (context?.previousConversations) {
+        queryClient.setQueryData(["conversations"], context.previousConversations);
+      }
+    },
+    onSettled: (_, __, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["conversations", variables.conversationId] });
     },
   });
 };

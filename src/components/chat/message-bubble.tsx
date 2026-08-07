@@ -42,9 +42,7 @@ export function MessageBubble({
   const msgSenderId = msg.senderId || msg.sender?.id;
   const isMe = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
   const isHighlighted = highlightedMsgId === msg.id;
-  
-  // 🌟 ফিক্স: শুধুমাত্র টেম্পোরারি আইডি হলে স্পিনার দেখাবে, সার্ভার আইডি আসলে আর ঘুরবে না
-  const isPending = msg._sendStatus === "pending" && String(msg.id).startsWith("temp-");
+  const isPending = msg._sendStatus === "pending";
   const isFailed = msg._sendStatus === "failed";
 
   const isDeleted = !msg.body && !msg.image && !msg.fileUrl;
@@ -56,13 +54,19 @@ export function MessageBubble({
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [actionsVisible, setActionsVisible] = useState(false);
 
+  // মেইন মেসেজ ডিক্রিপ্ট করার লোকাল স্টেট
   const [displayBody, setDisplayBody] = useState<string>(msg.body || "");
+
+  // রিপ্লাই প্রিভিউ মেসেজ ডিক্রিপ্ট করার লোকাল স্টেট
   const [replyDisplayBody, setReplyDisplayBody] = useState<string>("");
+
+  // ইমেজ লাইটবক্স প্রিভিউ-এর জন্য স্টেট
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
     async function resolveBodies() {
+      // ১. মেইন মেসেজ ডিক্রিপশন
       if (msg.body) {
         if (msg.body.trim().startsWith("{") && msg.keys && msg.keys.length > 0 && currentUserId) {
           try {
@@ -80,6 +84,7 @@ export function MessageBubble({
         }
       }
 
+      // ২. রিপ্লাই প্রিভিউ মেসেজ ডিক্রিপশন
       if (msg.replyTo && msg.replyTo.body) {
         const rawReply = msg.replyTo.body;
         if (rawReply.trim().startsWith("{") && msg.replyTo.keys && msg.replyTo.keys.length > 0 && currentUserId) {
@@ -123,6 +128,11 @@ export function MessageBubble({
 
   const isReadByOther = React.useMemo(() => {
     if (!isMe) return false;
+    
+    // 🌟 যদি মেসেজটি অলরেডি সার্ভার থেকে READ স্ট্যাটাস পায় অথবা সকেট থেকে রিড হয়ে থাকে
+    if (msg.status === "READ") return true;
+
+    // 🌟 যদি reads অ্যারে থাকে এবং সেখানে অন্য কারো আইডি থাকে
     if (msg.reads && Array.isArray(msg.reads) && msg.reads.length > 0) {
       const hasOtherRead = msg.reads.some((r) => {
         const readerId = typeof r === "string" ? r : r.userId;
@@ -130,7 +140,11 @@ export function MessageBubble({
       });
       if (hasOtherRead) return true;
     }
-    return msg.status === "READ";
+
+    // 🌟 ইনস্ট্যান্ট ফিক্স: অপরপক্ষ চ্যাটে থাকলে বা কনভার্সেশনের লাস্ট সিন আপডেট থাকলে ডাবল টিক দেখানোর জন্য 
+    // যদি আপনার ব্যাকএন্ডে conversation.lastRead یا অনুরূপ কিছু থাকে তা এখানে চেক করতে পারেন,
+    // তবে আপাতত সার্ভার স্ট্যাটাস ও reads ঠিকমতো কাজ না করলে এটি ফোর্সড ব্লু টিক দিতে পারেন:
+    return false; 
   }, [msg.reads, msg.status, currentUserId, isMe]);
 
   return (
@@ -140,6 +154,7 @@ export function MessageBubble({
         isHighlighted ? "bg-primary/20 ring-2 ring-primary/40" : ""
       } ${isMe ? "items-end" : "items-start"}`}
     >
+      {/* বাইরের দিকের টপ রিপ্লাই লেবেল */}
       {!isDeleted && msg.replyTo && (
         <div
           onClick={(e) => {
@@ -162,6 +177,8 @@ export function MessageBubble({
         </div>
       )}
 
+      {/* min-w-0 — flex row-কে শ্রিঙ্ক করার অনুমতি দিতে, নাহলে fixed-width attachment
+          বাবলকে ভেঙে/ওভারফ্লো করে বের করে দিত মোবাইলে */}
       <div className={`flex items-end gap-2 w-full min-w-0 ${isMe ? "justify-end" : "justify-start"}`}>
         {!isMe && (
           <Avatar className="h-8 w-8 mb-1 shrink-0">
@@ -313,10 +330,9 @@ export function MessageBubble({
               isMe
                 ? "bg-primary text-primary-foreground rounded-br-none self-end"
                 : "bg-muted/50 rounded-bl-none self-start"
-            } ${!isDeleted ? "cursor-pointer select-none" : ""} ${
-              isPending ? "opacity-60" : ""
-            } ${isFailed ? "ring-1 ring-red-400" : ""}`}
+            } ${!isDeleted ? "cursor-pointer select-none" : ""}  ${isFailed ? "ring-1 ring-red-400" : ""}`}
           >
+            {/* বাবলের ভেতরের রিপ্লাই প্রিভিউ বক্স */}
             {!isDeleted && msg.replyTo && (
               <div
                 onClick={(e) => {
@@ -342,6 +358,7 @@ export function MessageBubble({
               </p>
             ) : (
               <>
+                {/* msg.image — ক্লিক করলে লাইটবক্স খোলে */}
                 {msg.image && !msg.fileUrl && (
                   <div
                     className="relative w-full aspect-[4/3] max-h-64 mb-1 rounded-md overflow-hidden bg-muted/20 cursor-pointer"
@@ -364,6 +381,7 @@ export function MessageBubble({
                 {msg.fileUrl && (
                   <div className="mt-1">
                     {msg.fileType?.startsWith("image/") || (msg.image && msg.fileUrl) ? (
+                      // fileUrl image — ক্লিক করলে লাইটবক্স খোলে
                       <div
                         className="relative w-full max-w-[240px] aspect-[4/3] rounded-lg overflow-hidden cursor-pointer"
                         onClick={(e) => {
@@ -381,6 +399,10 @@ export function MessageBubble({
                         />
                       </div>
                     ) : (
+                      // 🌟 ফিক্স: <a> এর বদলে next/link এর Link কম্পোনেন্ট।
+                      // prefetch={false} দেওয়া হলো কারণ এটা কোনো internal app route না,
+                      // বরং external/dynamic file URL — prefetch করার দরকার নেই এবং
+                      // অপ্রয়োজনীয় console warning এড়াতে এটা বন্ধ রাখা ভালো প্র্যাক্টিস।
                       <Link
                         href={msg.fileUrl}
                         target="_blank"
@@ -414,19 +436,17 @@ export function MessageBubble({
 
               <span>{formatTime(msg.createdAt)}</span>
 
-              {isMe && (
-                <span className="ml-0.5">
-                  {isPending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin opacity-70" />
-                  ) : isFailed ? (
-                    <AlertCircle className="h-3.5 w-3.5 text-red-400" />
-                  ) : isReadByOther ? (
-                    <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold" />
-                  ) : (
-                    <Check className="h-3.5 w-3.5 opacity-70" />
-                  )}
-                </span>
-              )}
+   {isMe && (
+  <span className="ml-0.5">
+    {isFailed ? (
+      <AlertCircle className="h-3.5 w-3.5 text-red-400" />
+    ) : isReadByOther ? (
+      <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold" />
+    ) : (
+      <Check className="h-3.5 w-3.5 opacity-70" />
+    )}
+  </span>
+)}
             </div>
           </div>
 
@@ -446,6 +466,7 @@ export function MessageBubble({
             </button>
           )}
 
+          {/* রিয়্যাকশন গ্রুপিং ও কাউন্ট */}
           {!isDeleted && currentReactions.length > 0 && (() => {
             const groupedReactions = currentReactions.reduce((acc: any, r: any) => {
               const emoji = r.emoji;
@@ -480,9 +501,10 @@ export function MessageBubble({
         </div>
       </div>
 
+      {/* ইমেজ লাইটবক্স — attachment-এ ক্লিক করলে ফুল-স্ক্রিন প্রিভিউ খোলে */}
       {previewSrc && (
         <div
-          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
           onClick={() => setPreviewSrc(null)}
         >
           <button
@@ -491,14 +513,14 @@ export function MessageBubble({
               e.stopPropagation();
               setPreviewSrc(null);
             }}
-            className="absolute top-6 right-6 z-[10000] p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
             title="Close"
           >
-            <X className="h-6 w-6" />
+            <X className="h-5 w-5" />
           </button>
 
           <div
-            className="relative w-full h-full max-w-5xl max-h-[85vh] flex items-center justify-center"
+            className="relative w-full h-full max-w-4xl max-h-[85vh]"
             onClick={(e) => e.stopPropagation()}
           >
             <Image

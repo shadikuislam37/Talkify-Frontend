@@ -1,14 +1,13 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Button } from "@/components/ui/button";
-import { Loader2, Send, X, FileText, Smile } from "lucide-react";
+import { Loader2, Send, X, FileText, Film, Music, Smile } from "lucide-react";
 import { sendMessageSchema } from "@/schemas/chat.schema";
 import Image from "next/image";
 import { Message } from "@/types";
 import MediaUploadButton from "./MediaUploadButton";
-import EmojiPicker from "emoji-picker-react";
 
 interface MessageInputProps {
   conversationId: string;
@@ -21,6 +20,7 @@ interface MessageInputProps {
   onTyping: (text: string) => void;
 }
 
+const COMMON_EMOJIS = ["😊", "😂", "❤️", "👍", "🔥", "🎉", "😢", "😍", "🙏", "✨"];
 const MAX_TEXTAREA_HEIGHT = 120;
 
 export const MessageInput = ({
@@ -41,17 +41,6 @@ export const MessageInput = ({
 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const emojiPickerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
-        setShowEmojiPicker(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const form = useForm({
     defaultValues: {
@@ -125,8 +114,20 @@ export const MessageInput = ({
     setMediaPreview(null);
   };
 
+  const handleEmojiSelect = (emoji: string, field: any) => {
+    const currentVal = field.state.value || "";
+    const newVal = currentVal + emoji;
+    field.handleChange(newVal);
+    onTyping(newVal);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      autoResize(textareaRef.current);
+    }
+  };
+
   return (
     <div className="flex flex-col border-t bg-background shrink-0 mt-auto relative">
+      {/* Reply Preview Bar */}
       {replyingTo && (
         <div className="flex items-center justify-between gap-2 p-2 bg-muted/80 border-b text-xs">
           <div className="truncate pr-2 min-w-0 flex-1">
@@ -147,6 +148,7 @@ export const MessageInput = ({
         </div>
       )}
 
+      {/* Media Preview Box */}
       {mediaPreview && mediaPreview.url && (
         <div className="p-2 border-b bg-muted/40">
           <div className="relative w-fit max-w-full flex items-center gap-2 p-2 bg-background rounded-md border shadow-sm">
@@ -181,6 +183,7 @@ export const MessageInput = ({
         </div>
       )}
 
+      {/* Main Input Form */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -217,41 +220,34 @@ export const MessageInput = ({
                 onBlur={field.handleBlur}
                 placeholder="Type a message..."
                 autoComplete="off"
-                disabled={isSending}
+               
                 className="w-full resize-none overflow-y-auto min-h-[40px] max-h-[120px] rounded-md border border-input bg-background pl-3 pr-10 py-2.5 text-sm leading-5 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
 
+              {/* 🌟 ইনপুট বক্সের ভেতরে ইমোজি বাটন */}
               <div className="absolute right-2 bottom-2.5 flex items-center">
                 <button
                   type="button"
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  className="text-muted-foreground hover:text-foreground transition-colors p-1 cursor-pointer"
-                  title="Choose an emoji"
+                  className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                  title="Insert Emoji"
                 >
                   <Smile className="h-5 w-5" />
                 </button>
 
+                {/* ইমোজি পিকার পপআপ */}
                 {showEmojiPicker && (
-                  <div
-                    ref={emojiPickerRef}
-                    className="absolute bottom-full right-0 mb-3 z-50 shadow-2xl rounded-2xl overflow-hidden max-w-[90vw] sm:max-w-[320px]"
-                  >
-                    <EmojiPicker
-                      onEmojiClick={(emojiData) => {
-                        const currentVal = field.state.value || "";
-                        const newVal = currentVal + emojiData.emoji;
-                        field.handleChange(newVal);
-                        onTyping(newVal);
-                        if (textareaRef.current) {
-                          textareaRef.current.focus();
-                          autoResize(textareaRef.current);
-                        }
-                      }}
-                      width="100%"
-                      height={400}
-                      searchDisabled={false}
-                      skinTonesDisabled
-                    />
+                  <div className="absolute bottom-full right-0 mb-2 p-2 bg-background border rounded-xl shadow-xl flex flex-wrap gap-1.5 w-64 z-50">
+                    {COMMON_EMOJIS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => handleEmojiSelect(emoji, field)}
+                        className="p-1.5 hover:bg-muted rounded-lg text-lg transition-transform hover:scale-125 cursor-pointer"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
@@ -259,18 +255,18 @@ export const MessageInput = ({
           )}
         </form.Field>
 
-        <form.Subscribe selector={(state) => [state.values.body, mediaPreview]}>
-          {([body, preview]) => (
-            <Button
-              type="submit"
-              disabled={isSending || (!body?.trim() && !preview)}
-              size="icon"
-              className="h-10 w-10 shrink-0"
-            >
-              {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
-          )}
-        </form.Subscribe>
+     <form.Subscribe selector={(state) => [state.values.body, mediaPreview]}>
+  {([body, preview]) => (
+    <Button
+      type="submit"
+      disabled={!body?.trim() && !preview}
+      size="icon"
+      className="h-10 w-10 shrink-0"
+    >
+      <Send className="h-4 w-4" />
+    </Button>
+  )}
+</form.Subscribe>
       </form>
     </div>
   );

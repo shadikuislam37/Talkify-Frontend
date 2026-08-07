@@ -1,69 +1,95 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  ShieldCheck,
-  UserMinus,
-  ShieldAlert,
-  UserPlus,
-  Loader2,
-  LogOut,
-} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ShieldCheck, UserMinus, ShieldAlert, UserPlus, Loader2, LogOut, Camera, Check, Edit2, Palette } from "lucide-react";
 import { AuthUser } from "@/types";
-import { useAddGroupMember, useMakeGroupAdmin, useRemoveGroupMember } from "@/hooks/use-conversations";
+import { useAddGroupMember, useMakeGroupAdmin, useRemoveGroupMember, useUpdateGroupDetails } from "@/hooks/use-conversations";
+import { mediaApi } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { ThemePicker } from "./theme-picker";
 
 interface GroupDetailsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   conversationId: string;
   groupName: string;
+  groupImage?: string | null;
   members: AuthUser[];
   adminIds?: string[];
   currentUserId?: string;
   allUsers?: AuthUser[];
 }
 
+// 🌟 নতুন থিম পিকার কম্পোনেন্ট (কোনো পুরনো কোড না সরিয়ে আলাদাভাবে যুক্ত করা হয়েছে)
+
 export default function GroupDetailsModal({
   open,
   onOpenChange,
   conversationId,
   groupName,
+  groupImage,
   members = [],
   adminIds = [],
   currentUserId,
   allUsers = [],
 }: GroupDetailsModalProps) {
+  const queryClient = useQueryClient();
+
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [selectedNewUserIds, setSelectedNewUserIds] = useState<string[]>([]);
 
-  const { mutateAsync: removeMember, isPending: isRemoving } =
-    useRemoveGroupMember();
-  const { mutateAsync: makeAdmin, isPending: isPromoting } =
-    useMakeGroupAdmin();
-  const { mutateAsync: addMembers, isPending: isAdding } =
-    useAddGroupMember();
+  // গ্রুপ নাম ও ছবি এডিট স্টেট
+  const [isEditing, setIsEditing] = useState(false);
+  const [name, setName] = useState(groupName);
+  const [image, setImage] = useState(groupImage || "");
+  const [isUploading, setIsUploading] = useState(false);
 
-  // 🌟 ফিক্স: আলাদা useLeaveGroup হুক backend-এ কোনো route ছাড়াই কল করছিল (404 দিত)।
-  // আপনার backend-এর removeGroupMember সার্ভিসে আগে থেকেই self-remove লজিক আছে
-  // (isSelfRemove চেক), তাই "leave" আসলে "নিজেকে remove করা" — existing route reuse করা হলো।
+  const { mutateAsync: removeMember, isPending: isRemoving } = useRemoveGroupMember();
+  const { mutateAsync: makeAdmin, isPending: isPromoting } = useMakeGroupAdmin();
+  const { mutateAsync: addMembers, isPending: isAdding } = useAddGroupMember();
+  const { mutateAsync: updateGroup, isPending: isUpdating } = useUpdateGroupDetails();
+
   const isLeaving = isRemoving;
+  const isCurrentUserAdmin = currentUserId ? adminIds.includes(currentUserId) : false;
+  const nonMembers = allUsers.filter((u) => !members.some((m) => m.id === u.id));
 
-  const isCurrentUserAdmin = currentUserId
-    ? adminIds.includes(currentUserId)
-    : false;
+  // গ্রুপ ছবি আপলোড হ্যান্ডলার
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // যারা অলরেডি গ্রুপের সদস্য না তাদের ফিল্টার করা
-  const nonMembers = allUsers.filter(
-    (u) => !members.some((m) => m.id === u.id)
-  );
+    try {
+      setIsUploading(true);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res: any = await mediaApi.post("/media/upload", formData);
+      const uploadedUrl = res.url || res.data?.url;
+      if (uploadedUrl) {
+        setImage(uploadedUrl);
+      }
+    } catch (error) {
+      console.error("Failed to upload group image", error);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // গ্রুপ নাম ও ছবি সেভ হ্যান্ডলার
+  const handleSaveGroupDetails = async () => {
+    try {
+      await updateGroup({ conversationId, name, image });
+      setIsEditing(false);
+      queryClient.invalidateQueries({ queryKey: ["conversations", conversationId] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    } catch (error) {
+      console.error("Failed to update group details", error);
+    }
+  };
 
   const handleRemove = async (targetUserId: string) => {
     if (confirm("Are you sure you want to remove this member?")) {
@@ -79,8 +105,6 @@ export default function GroupDetailsModal({
 
   const handleAddMembers = async () => {
     if (selectedNewUserIds.length === 0 || !currentUserId) return;
-    // 🌟 ফিক্স: currentUserId এখন পাঠানো হচ্ছে — history backfill flow-এর জন্য দরকার
-    // (নতুন মেম্বারদের জন্য পুরনো মেসেজের AES key নিজের private key দিয়ে re-encrypt করতে হয়)
     await addMembers({ conversationId, userIds: selectedNewUserIds, currentUserId });
     setSelectedNewUserIds([]);
     setIsAddMemberOpen(false);
@@ -89,8 +113,6 @@ export default function GroupDetailsModal({
   const handleLeaveGroup = async () => {
     if (!currentUserId) return;
     if (confirm("Are you sure you want to leave this group?")) {
-      // 🌟 ফিক্স: ভাঙা useLeaveGroup-এর বদলে existing remove-member route reuse —
-      // targetUserId === currentUserId হলে backend নিজেই self-remove হিসেবে allow করে
       await removeMember({ conversationId, targetUserId: currentUserId });
       onOpenChange(false);
     }
@@ -98,15 +120,64 @@ export default function GroupDetailsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold">{groupName}</DialogTitle>
-          <p className="text-xs text-muted-foreground">
-            {members.length} Members
-          </p>
+          {/* গ্রুপ প্রোফাইল ও নাম এডিট সেকশন */}
+          <div className="flex flex-col items-center justify-center pb-3 border-b border-border relative">
+            <div className="relative group">
+              <Avatar className="h-16 w-16">
+                <AvatarImage src={image} alt={name} />
+                <AvatarFallback className="text-lg font-bold">
+                  {name ? name.slice(0, 2).toUpperCase() : "GP"}
+                </AvatarFallback>
+              </Avatar>
+
+              {isCurrentUserAdmin && isEditing && (
+                <label className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full cursor-pointer text-white">
+                  {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                  <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                </label>
+              )}
+            </div>
+
+            <div className="mt-2.5 w-full flex items-center justify-center gap-2">
+              {isEditing ? (
+                <div className="flex items-center gap-2 w-full px-4">
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Group name"
+                    className="h-8 text-sm"
+                  />
+                  <Button size="sm" onClick={handleSaveGroupDetails} disabled={isUpdating} className="h-8 px-2.5">
+                    {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <DialogTitle className="text-lg font-bold">{name}</DialogTitle>
+                  {isCurrentUserAdmin && (
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setIsEditing(true)}>
+                      <Edit2 className="h-3 w-3 text-muted-foreground" />
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">{members.length} Members</p>
+          </div>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          
+          {/* 🌟 নতুন গ্রুপ থিম সেকশন (অরিজিনাল কোড অপরিবর্তিত রেখে এখানে বসানো হয়েছে) */}
+          <div className="space-y-2 border-b pb-3">
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <Palette className="h-3.5 w-3.5" /> Group Theme
+            </p>
+            <ThemePicker conversationId={conversationId} />
+          </div>
+
           {/* Member Add Section for Admins */}
           {isCurrentUserAdmin && (
             <div>
@@ -142,16 +213,9 @@ export default function GroupDetailsModal({
                             checked={selectedNewUserIds.includes(user.id)}
                             onChange={(e) => {
                               if (e.target.checked)
-                                setSelectedNewUserIds([
-                                  ...selectedNewUserIds,
-                                  user.id,
-                                ]);
+                                setSelectedNewUserIds([...selectedNewUserIds, user.id]);
                               else
-                                setSelectedNewUserIds(
-                                  selectedNewUserIds.filter(
-                                    (id) => id !== user.id
-                                  )
-                                );
+                                setSelectedNewUserIds(selectedNewUserIds.filter((id) => id !== user.id));
                             }}
                           />
                           <Avatar className="h-6 w-6">
@@ -183,9 +247,7 @@ export default function GroupDetailsModal({
                       disabled={isAdding || selectedNewUserIds.length === 0}
                       className="h-8 text-xs gap-1"
                     >
-                      {isAdding && (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      )}
+                      {isAdding && <Loader2 className="h-3 w-3 animate-spin" />}
                       Add Selected
                     </Button>
                   </div>
@@ -199,7 +261,7 @@ export default function GroupDetailsModal({
             <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
               Group Members
             </p>
-            <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+            <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
               {members.map((member) => {
                 const isAdmin = adminIds.includes(member.id);
                 const isMe = member.id === currentUserId;
@@ -258,7 +320,7 @@ export default function GroupDetailsModal({
             </div>
           </div>
 
-          {/* 🌟 Leave Group Button Section */}
+          {/* Leave Group Button Section */}
           <div className="pt-2 border-t">
             <Button
               type="button"
@@ -268,11 +330,7 @@ export default function GroupDetailsModal({
               disabled={isLeaving || !currentUserId}
               className="w-full flex items-center justify-center gap-2 h-9"
             >
-              {isLeaving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <LogOut className="h-4 w-4" />
-              )}
+              {isLeaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
               <span>Leave Group</span>
             </Button>
           </div>

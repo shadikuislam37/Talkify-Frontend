@@ -93,7 +93,7 @@ export interface Message {
 
   conversationId?: string;
 
-  //file upload feature :
+  // file upload feature :
   fileUrl?: string | null;
   fileName?: string | null;
   fileType?: string | null;
@@ -105,6 +105,7 @@ export interface Message {
     body?: string | null;
     senderName?: string;
     sender?: AuthUser;
+    keys?: { userId: string; encryptedKey: string }[]; // 🌟 টাইপ এরর ফিক্স করতে keys যোগ করা হলো
   } | Message | null;
   replies?: Message[];
 
@@ -116,8 +117,7 @@ export interface Message {
   reads?: MessageRead[];
   isEdited?: boolean;
 
-  // 🌟 Optimistic UI (client-only fields, backend কখনো এগুলো পাঠায় না) —
-  // temporary id দিয়ে instant bubble দেখানো, ব্যর্থ হলে retry করার জন্য
+  // 🌟 Optimistic UI
   _sendStatus?: "pending" | "failed";
   _retryPayload?: {
     conversationId: string;
@@ -143,7 +143,7 @@ export interface Conversation {
   adminIds?: string[];
   createdAt?: string | Date;
   updatedAt?: string | Date;
-
+theme?: string | null; 
   users?: AuthUser[];
   messages?: Message[];
 

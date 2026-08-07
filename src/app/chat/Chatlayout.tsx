@@ -58,7 +58,7 @@ export const ChatLayout = ({
   const { data: conversations = [], isLoading } = useGetConversations();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
 
-  const { setIncomingCall, incomingCall } = useCallStore();
+  const { setIncomingCall } = useCallStore();
 
   const activeConversationId = selectedConversationId;
 
@@ -75,6 +75,15 @@ export const ChatLayout = ({
     () => setIncomingCall(null)
   );
 
+  // 🌟 মাল্টি-ডিভাইস সিঙ্ক: একই অ্যাকাউন্ট একাধিক ডিভাইসে লগইন থাকলে গ্লোবাল রুম বা সেটাপ নিশ্চিত করা
+  useEffect(() => {
+    if (!socket) return;
+    if (!socket.connected) socket.connect();
+    if (currentUserId) {
+      socket.emit("setup", currentUserId);
+    }
+  }, [socket, currentUserId]);
+
   const handleSelectConversation = async (id: string) => {
     setSelectedConversationId(id);
 
@@ -89,7 +98,6 @@ export const ChatLayout = ({
       socket.emit("mark_conversation_as_read", { conversationId: id });
     }
 
-    // 🌟 নতুন চ্যাট সিলেক্ট করার সাথে সাথে ক্যাশ সিঙ্ক ও রিফেচ নিশ্চিত করা হলো
     await queryClient.invalidateQueries({ queryKey: ["conversations"] });
     await queryClient.refetchQueries({ queryKey: ["conversations"] });
   };
@@ -130,8 +138,6 @@ export const ChatLayout = ({
   }
 
   return (
-    // 🌟 ফিক্স: h-screen (100vh) → h-app-screen (100dvh fallback সহ)
-    // মোবাইল ব্রাউজারে address bar show/hide হলেও height সঠিক থাকে
     <div className="flex h-app-screen w-full overflow-hidden bg-background relative">
       {currentUserId && meData && (
         <E2EEPinModal
@@ -190,20 +196,20 @@ export const ChatLayout = ({
               </DialogContent>
             </Dialog>
 
-          <Button
-    variant="ghost"
-    size="icon"
-    onClick={handleLogout}
-    disabled={isLoggingOut}
-    title="Log Out"
-    className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
-  >
-    {isLoggingOut ? (
-      <Loader2 className="h-4 w-4 animate-spin" />
-    ) : (
-      <LogOut className="h-4 w-4" />
-    )}
-  </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              title="Log Out"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
+            >
+              {isLoggingOut ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogOut className="h-4 w-4" />
+              )}
+            </Button>
 
             <Button
               variant="ghost"
