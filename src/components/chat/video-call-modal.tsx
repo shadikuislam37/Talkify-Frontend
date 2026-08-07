@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import Image from "next/image"; // 🌟 Next.js Image Component Import
+import Image from "next/image";
 import { useCallStore } from "@/store/use-call-store";
 import { Button } from "@/components/ui/button";
 import { PhoneOff, PhoneCall, Mic, MicOff, Video, VideoOff, Volume2 } from "lucide-react";
@@ -13,21 +13,9 @@ interface VideoCallModalProps {
 
 const ICE_SERVERS = {
   iceServers: [
-    {
-      urls: "stun:stun.relay.metered.ca:80",
-    },
+    { urls: "stun:stun.relay.metered.ca:80" },
     {
       urls: "turn:global.relay.metered.ca:80",
-      username: process.env.NEXT_PUBLIC_TURN_USERNAME,
-      credential: process.env.NEXT_PUBLIC_TURN_PASSWORD,
-    },
-    {
-      urls: "turn:global.relay.metered.ca:80?transport=tcp",
-      username: process.env.NEXT_PUBLIC_TURN_USERNAME,
-      credential: process.env.NEXT_PUBLIC_TURN_PASSWORD,
-    },
-    {
-      urls: "turn:global.relay.metered.ca:443",
       username: process.env.NEXT_PUBLIC_TURN_USERNAME,
       credential: process.env.NEXT_PUBLIC_TURN_PASSWORD,
     },
@@ -67,7 +55,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: videoEnabled,
-        audio: true,
+        audio: { echoCancellation: true, noiseSuppression: true },
       });
       localStreamRef.current = stream;
       if (videoEnabled && myVideoRef.current) {
@@ -75,7 +63,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       }
       return stream;
     } catch (err) {
-      console.error("Error accessing media devices.", err);
+      console.error("Error accessing media devices:", err);
       return null;
     }
   };
@@ -90,21 +78,18 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       });
     }
 
+    // 🌟 রিমোট ট্র্যাক ও অডিও-ভিডিও সিঙ্ক ফিক্স (যাতে উভয় পক্ষ থেকে সাউন্ড শোনা যায়)
     pc.ontrack = (event) => {
       const remoteStream = event.streams[0];
       
-      if (userVideoRef.current) {
-        userVideoRef.current.srcObject = remoteStream;
-        userVideoRef.current.play().catch((err) => {
-          console.error("Remote video playback failed:", err);
-        });
-      }
-
       if (remoteAudioRef.current) {
         remoteAudioRef.current.srcObject = remoteStream;
-        remoteAudioRef.current.play().catch((err) => {
-          console.error("Remote audio playback failed:", err);
-        });
+        remoteAudioRef.current.play().catch((e) => console.error("Audio play error:", e));
+      }
+
+      if (userVideoRef.current) {
+        userVideoRef.current.srcObject = remoteStream;
+        userVideoRef.current.play().catch((e) => console.error("Video play error:", e));
       }
     };
 
@@ -115,10 +100,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
           candidate: event.candidate,
         });
       }
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      console.log("🧊 ICE connection state:", pc.iceConnectionState);
     };
 
     return pc;
@@ -136,7 +117,8 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
         socket.emit("call_offer", {
           targetUserId: targetUser.id,
-          name: "Caller",
+          name: targetUser.name || "Caller",
+          image: targetUser.image || "",
           sdp: offer,
           isVideo: isVideoCall,
         });
@@ -225,7 +207,9 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   if (!isCalling && !incomingCall && !callActive) return null;
 
   const activeCallTypeVideo = callActive ? isVideoCall : (incomingCall?.isVideo ?? true);
-  const activeUser = targetUser || (incomingCall ? { id: incomingCall.from, name: incomingCall.name, image: incomingCall.image } : null);
+  
+  // 🌟 ফিক্স: ইউজারের সঠিক নাম ও ছবি নিশ্চিত করা হলো যাতে "AC" বা "User" না দেখায়
+  const activeUser = targetUser || (incomingCall ? { id: incomingCall.from, name: incomingCall.name || "User", image: incomingCall.image } : null);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4">
@@ -239,7 +223,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
             )}
           </div>
           <div>
-            <h3 className="font-bold text-lg">{incomingCall.name}</h3>
+            <h3 className="font-bold text-lg">{incomingCall.name || "User"}</h3>
             <p className="text-sm text-muted-foreground mt-1">
               Incoming {incomingCall.isVideo ? "Video" : "Audio"} Call...
             </p>

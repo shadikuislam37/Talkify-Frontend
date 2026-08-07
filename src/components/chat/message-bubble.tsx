@@ -42,7 +42,9 @@ export function MessageBubble({
   const msgSenderId = msg.senderId || msg.sender?.id;
   const isMe = Boolean(msgSenderId && String(msgSenderId) === String(currentUserId));
   const isHighlighted = highlightedMsgId === msg.id;
-  const isPending = msg._sendStatus === "pending";
+  
+  // 🌟 ফিক্স: শুধুমাত্র টেম্পোরারি আইডি হলে স্পিনার দেখাবে, সার্ভার আইডি আসলে আর ঘুরবে না
+  const isPending = msg._sendStatus === "pending" && String(msg.id).startsWith("temp-");
   const isFailed = msg._sendStatus === "failed";
 
   const isDeleted = !msg.body && !msg.image && !msg.fileUrl;
