@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import Image from "next/image"; // 🌟 Next.js Image Component Import
 import { useCallStore } from "@/store/use-call-store";
 import { Button } from "@/components/ui/button";
 import { PhoneOff, PhoneCall, Mic, MicOff, Video, VideoOff, Volume2 } from "lucide-react";
@@ -224,13 +225,18 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   if (!isCalling && !incomingCall && !callActive) return null;
 
   const activeCallTypeVideo = callActive ? isVideoCall : (incomingCall?.isVideo ?? true);
+  const activeUser = targetUser || (incomingCall ? { id: incomingCall.from, name: incomingCall.name, image: incomingCall.image } : null);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4">
       {incomingCall && !callActive && (
         <div className="bg-background border rounded-2xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl animate-in fade-in zoom-in">
           <div className="relative w-20 h-20 mx-auto rounded-full overflow-hidden border-2 border-primary flex items-center justify-center bg-muted">
-            <Volume2 className="h-8 w-8 text-primary animate-bounce" />
+            {incomingCall.image ? (
+              <Image src={incomingCall.image} alt={incomingCall.name || "Caller"} fill className="object-cover" unoptimized />
+            ) : (
+              <Volume2 className="h-8 w-8 text-primary animate-bounce" />
+            )}
           </div>
           <div>
             <h3 className="font-bold text-lg">{incomingCall.name}</h3>
@@ -239,10 +245,10 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
             </p>
           </div>
           <div className="flex justify-center gap-4 pt-2">
-            <Button variant="destructive" size="icon" className="rounded-full h-12 w-12" onClick={handleEndCall}>
+            <Button variant="destructive" size="icon" className="rounded-full h-12 w-12 cursor-pointer" onClick={handleEndCall}>
               <PhoneOff className="h-5 w-5" />
             </Button>
-            <Button variant="default" size="icon" className="rounded-full h-12 w-12 bg-green-600 hover:bg-green-700" onClick={handleAccept}>
+            <Button variant="default" size="icon" className="rounded-full h-12 w-12 bg-green-600 hover:bg-green-700 cursor-pointer" onClick={handleAccept}>
               <PhoneCall className="h-5 w-5" />
             </Button>
           </div>
@@ -256,19 +262,18 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
           {activeCallTypeVideo ? (
             <div className="relative w-full h-full flex items-center justify-center bg-black">
-              {/* ভিডিও অফ থাকলে বা কানেক্ট হওয়ার আগে ব্যাকগ্রাউন্ডে প্রোফাইল শো করবে */}
               {(isVideoOff || !callActive) && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 z-10 space-y-3">
                   <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-primary/40 bg-muted flex items-center justify-center shadow-2xl">
-                    {targetUser?.image ? (
-                      <img src={targetUser.image} alt={targetUser.name} className="w-full h-full object-cover" />
+                    {activeUser?.image ? (
+                      <Image src={activeUser.image} alt={activeUser.name || "User"} fill className="object-cover" unoptimized />
                     ) : (
                       <span className="text-3xl font-bold text-primary">
-                        {targetUser?.name ? targetUser.name.slice(0, 2).toUpperCase() : "U"}
+                        {activeUser?.name ? activeUser.name.slice(0, 2).toUpperCase() : "U"}
                       </span>
                     )}
                   </div>
-                  <h3 className="text-xl font-bold text-white">{targetUser?.name || "User"}</h3>
+                  <h3 className="text-xl font-bold text-white">{activeUser?.name || "User"}</h3>
                   <p className="text-xs text-zinc-400 animate-pulse">
                     {!callActive ? "Calling..." : "Camera is turned off"}
                   </p>
@@ -277,7 +282,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
               <video ref={userVideoRef} autoPlay playsInline className={`w-full h-full object-cover ${isVideoOff ? "hidden" : ""}`} />
 
-              {/* নিজের ছোট ভিডিও প্রিভিউ (ভিডিও অফ থাকলে নিজের প্রোফাইল দেখাবে) */}
               <div className="absolute bottom-24 right-4 w-32 h-44 bg-zinc-900 rounded-xl overflow-hidden border-2 border-background shadow-lg z-20 flex items-center justify-center">
                 {isVideoOff ? (
                   <div className="flex flex-col items-center justify-center text-center p-2">
@@ -292,19 +296,18 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
               </div>
             </div>
           ) : (
-            // অডিও কল UI (প্রোফাইল পিকচার সহ)
             <div className="relative w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-zinc-900 to-black space-y-4">
               <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-primary/40 animate-pulse bg-muted flex items-center justify-center shadow-2xl">
-                {targetUser?.image ? (
-                  <img src={targetUser.image} alt={targetUser.name} className="w-full h-full object-cover" />
+                {activeUser?.image ? (
+                  <Image src={activeUser.image} alt={activeUser.name || "User"} fill className="object-cover" unoptimized />
                 ) : (
                   <span className="text-3xl font-bold text-primary">
-                    {targetUser?.name ? targetUser.name.slice(0, 2).toUpperCase() : "AC"}
+                    {activeUser?.name ? activeUser.name.slice(0, 2).toUpperCase() : "AC"}
                   </span>
                 )}
               </div>
               <div className="text-center">
-                <h3 className="text-xl font-bold text-white">{targetUser?.name || "User"}</h3>
+                <h3 className="text-xl font-bold text-white">{activeUser?.name || "User"}</h3>
                 <p className="text-sm text-zinc-400 mt-1">
                   {callActive ? "Ongoing Audio Call..." : "Calling..."}
                 </p>
@@ -312,12 +315,11 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
             </div>
           )}
 
-          {/* কন্ট্রোল বাটনস */}
           <div className="absolute bottom-6 flex items-center gap-4 bg-background/80 backdrop-blur-md px-6 py-3 rounded-full border shadow-lg z-30">
             <Button
               variant={isMuted ? "destructive" : "outline"}
               size="icon"
-              className="rounded-full h-11 w-11"
+              className="rounded-full h-11 w-11 cursor-pointer"
               onClick={toggleMute}
               title={isMuted ? "Unmute" : "Mute"}
             >
@@ -328,7 +330,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
               <Button
                 variant={isVideoOff ? "destructive" : "outline"}
                 size="icon"
-                className="rounded-full h-11 w-11"
+                className="rounded-full h-11 w-11 cursor-pointer"
                 onClick={toggleVideo}
                 title={isVideoOff ? "Turn Video On" : "Turn Video Off"}
               >
@@ -339,7 +341,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
             <Button
               variant="destructive"
               size="icon"
-              className="rounded-full h-12 w-12 bg-red-600 hover:bg-red-700"
+              className="rounded-full h-12 w-12 bg-red-600 hover:bg-red-700 cursor-pointer"
               onClick={handleEndCall}
               title="End Call"
             >

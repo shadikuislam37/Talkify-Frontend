@@ -1,6 +1,6 @@
 import { api } from "@/lib/api";
 import { getClientMessaging } from "@/lib/firebase";
-import { decryptMessage } from "@/lib/crypto"; // ডিক্রিপশনের জন্য ইম্পোর্ট করা হলো
+import { decryptMessage } from "@/lib/crypto";
 
 // ১. সাউন্ড বাজানো (ফাইল না থাকলে ক্র্যাশ করবে না)
 export const playNotificationSound = () => {
@@ -47,11 +47,11 @@ export const requestNotificationPermission = async () => {
   }
 };
 
-// ৩. লোকাল পুশ নোটিফিকেশন দেখানো (এনক্রিপ্টেড টেক্সট ফিক্স সহ)
+// ৩. লোকাল ও রিমোট পুশ নোটিফিকেশন দেখানো (মোবাইল, আইপ্যাড ও ডেস্কটপ সাপোর্ট সহ)
 export const sendPushNotification = async (
   title: string,
   body: string,
- keys?: { userId: string; encryptedKey: string }[] | null,
+  keys?: { userId: string; encryptedKey: string }[] | null,
   currentUserId?: string,
 ) => {
   if (typeof window === "undefined") return;
@@ -59,36 +59,68 @@ export const sendPushNotification = async (
   let displayBody = body;
 
   try {
-    // যদি বডিটি এনক্রিপ্টেড জেসন বা সিপার্থটেক্সট হয় এবং ডিক্রিপ্ট করার মতো keys ও currentUserId থাকে
+    // 🌟 মোবাইল ও আইপ্যাডের জন্য ইউজার আইডি মিসিং থাকলে লোকালস্টোরেজ থেকে ফলব্যাক নেওয়া
+    let activeUserId = currentUserId;
+    if (!activeUserId) {
+      try {
+        const storedUser = localStorage.getItem("auth_user") || localStorage.getItem("user_id");
+        if (storedUser) {
+          activeUserId = storedUser.includes("{") ? JSON.parse(storedUser).id : storedUser;
+        }
+      } catch (e) {
+        // সাইলেন্টলি হ্যান্ডেল করবে
+      }
+    }
+
+    // যদি বডিটি এনক্রিপ্টেড জেসন হয় এবং ডিক্রিপ্ট করার মতো ডেটা থাকে
     if (
       body &&
       body.trim().startsWith("{") &&
       keys &&
       keys.length > 0 &&
-      currentUserId
+      activeUserId
     ) {
       try {
-        const decrypted = await decryptMessage(body, keys, currentUserId);
+        const decrypted = await decryptMessage(body, keys, activeUserId);
         if (decrypted && !decrypted.startsWith("{")) {
           displayBody = decrypted;
         } else {
           displayBody = "New encrypted message";
         }
       } catch (err) {
-        displayBody = "New encrypted message";
+        displayBody = "New message";
       }
     } else if (body && body.trim().startsWith("{")) {
-      // কি বা ইউজার আইডি না থাকলে হিজিবিজি কোড না দেখিয়ে ক্লিন টেক্সট দেখাবে
       displayBody = "New message received";
     }
   } catch (e) {
     displayBody = "New message received";
   }
 
+  // সব ডিভাইসে নোটিফিকেশন ট্রিগার করার জন্য সার্ভিস ওয়ার্কার ও ফলব্যাক হ্যান্ডলিং
   if ("Notification" in window && Notification.permission === "granted") {
-    new Notification(title, {
-      body: displayBody,
-      icon: "/icon.svg",
-    });
+    try {
+      if ("serviceWorker" in navigator && navigator.serviceWorker.ready) {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.showNotification(title, {
+          body: displayBody,
+          icon: "/icon.svg",
+          badge: "/icon.svg",
+        } as NotificationOptions);
+      } else {
+        new Notification(title, {
+          body: displayBody,
+          icon: "/icon.svg",
+        });
+      }
+    } catch (error) {
+      // ফলব্যাক হিসেবে স্ট্যান্ডার্ড নোটিফিকেশন
+      try {
+        new Notification(title, {
+          body: displayBody,
+          icon: "/icon.svg",
+        });
+      } catch (e) {}
+    }
   }
 };
