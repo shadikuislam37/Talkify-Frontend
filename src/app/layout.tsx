@@ -4,6 +4,9 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import QueryProvider from "@/providers/query-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
+import { CallProvider } from "@/providers/call-provider";
+import { Toaster } from "sonner";
+
 const inter = Inter({ 
   subsets: ["latin"], 
   variable: "--font-sans" 
@@ -39,6 +42,17 @@ export default function RootLayout({
         >
           <QueryProvider>
             {children}
+
+            {/* 🌟 নতুন: কল এখন পুরো অ্যাপ জুড়ে ধরা হয়, শুধু chat page-এ না।
+                CallProvider ভেতরে socket connect করে আর VideoCallModal mount
+                করে, তাই ইউজার যেকোনো route-এ থাকলেও incoming call দেখতে পাবে। */}
+            <CallProvider />
+
+            {/* 🌟 Toaster root-এ — permission error / call error-এর toast গুলো
+                chat page-এর বাইরেও দেখাতে হবে।
+                ⚠️ যদি chat layout-এ ইতিমধ্যে <Toaster /> থাকে, সেখান থেকে
+                সরিয়ে দাও — নাহলে দুটো Toaster-এ toast ডাবল দেখাবে। */}
+            <Toaster position="top-center" richColors />
           </QueryProvider>
         </ThemeProvider>
       </body>

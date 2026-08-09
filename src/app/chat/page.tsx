@@ -29,9 +29,7 @@ export default function Page() {
         currentUserName={currentUserName}
       />
 
-      {currentUserId && (
-        <VideoCallModal socket={socket} currentUserId={currentUserId} />
-      )}
+   
     </>
   );
 }

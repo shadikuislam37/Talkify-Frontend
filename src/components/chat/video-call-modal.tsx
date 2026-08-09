@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import Image from "next/image";
 import { useCallStore } from "@/store/use-call-store";
 import { Button } from "@/components/ui/button";
-import { PhoneOff, PhoneCall, Mic, MicOff, Video, VideoOff, Volume2 } from "lucide-react";
+import { PhoneOff, PhoneCall, Mic, MicOff, Video, VideoOff, Volume2, VolumeX } from "lucide-react";
+import { toast } from "sonner";
 
 interface VideoCallModalProps {
   socket: any;
@@ -33,32 +34,116 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-
-  // 🌟 FIX #2-এর অংশ: remote stream state-এ রাখা হচ্ছে।
-  // আগে ontrack সরাসরি ref-এ srcObject বসাতো — কিন্তু ওই মুহূর্তে <audio>/<video>
-  // element DOM-এ mount না থাকলে ref null, আর stream চিরতরে হারিয়ে যেত।
-  // state-এ রাখলে element mount হওয়ার পর useEffect দিয়ে attach করা যায়।
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
+  // 🌟 FIX #1-এর অংশ: browser autoplay policy-র কারণে remote audio play() reject
+  // হলে এই flag true হয় আর UI-তে "Tap to enable sound" বাটন দেখায়।
+  const [needsAudioTap, setNeedsAudioTap] = useState(false);
 
   const myVideoRef = useRef<HTMLVideoElement | null>(null);
   const userVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-
-  // 🌟 FIX #1: ICE candidate buffer।
-  // Caller offer পাঠানোর সাথে সাথেই ICE candidate generate করতে শুরু করে, কিন্তু
-  // receiver-এর peerConnection তৈরি হয় শুধু Accept চাপার পর। মাঝের এই কয়েক
-  // সেকেন্ডে আসা সব candidate আগে চুপচাপ drop হয়ে যেত (pc null ছিল), ফলে
-  // connection কখনো establish হতো না — ring হতো, sound আসতো না।
-  // এখন pc তৈরি না হওয়া পর্যন্ত (বা remoteDescription বসার আগে) candidate গুলো
-  // এখানে জমা থাকে, তারপর একসাথে flush হয়।
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
-
-  // একই call-এ দুইবার offer তৈরি ঠেকানোর গার্ড (useEffect re-run হলে)
   const offerSentRef = useRef(false);
+  const audioUnlockedRef = useRef(false);
+
+  // 🌟 FIX #2: remote peer-এর id আলাদা ref-এ রাখা।
+  // আগে end_call পাঠাতে `targetUser?.id || incomingCall?.from` ব্যবহার হতো —
+  // কিন্তু receiver-এর targetUser থাকে না, আর accept করার পর store থেকে
+  // incomingCall clear হয়ে গেলে দুটোই undefined হয়ে যেত। ফলে এক দিক থেকে কল
+  // কাটলে emit-ই হতো না, উল্টো দিকে কল চলতেই থাকতো (one-sided hangup)।
+  // এই ref কল শুরুর মুহূর্তে একবার সেট হয়, cleanup পর্যন্ত টিকে থাকে।
+  const remotePeerIdRef = useRef<string | null>(null);
+
+  // ==========================================================================
+  // 🔊 AUDIO UNLOCK — mobile-এ এক দিকের sound না আসার আসল কারণ
+  // ==========================================================================
+  // Chrome/Safari mobile-এ user gesture ছাড়া audio play() করা যায় না।
+  // কল শুরুর সময় ইউজার বাটনে ক্লিক করে, কিন্তু remote stream আসে তার কয়েক
+  // সেকেন্ড পরে — ততক্ষণে gesture context শেষ, play() reject হয়, আর ওই পাশের
+  // ইউজার কিছুই শুনতে পায় না (উল্টো দিকে ঠিকই শোনা যায়, তাই one-way মনে হয়)।
+  // সমাধান: gesture-এর ভেতরেই খালি audio element একবার muted play করে "unlock"
+  // করে রাখা — তারপর stream attach হলে নিজে থেকেই বাজবে।
+  const unlockAudio = useCallback(() => {
+    const el = remoteAudioRef.current;
+    if (!el || audioUnlockedRef.current) return;
+
+    el.muted = true;
+    el.play()
+      .then(() => {
+        el.muted = false;
+        audioUnlockedRef.current = true;
+        setNeedsAudioTap(false);
+      })
+      .catch(() => {
+        // unlock করা গেল না — UI-তে tap বাটন দেখানো হবে
+      });
+  }, []);
+
+  // যেকোনো tap/click-এ unlock করার চেষ্টা (সবচেয়ে নির্ভরযোগ্য fallback)
+  useEffect(() => {
+    const handler = () => unlockAudio();
+    document.addEventListener("pointerdown", handler);
+    document.addEventListener("touchend", handler);
+    return () => {
+      document.removeEventListener("pointerdown", handler);
+      document.removeEventListener("touchend", handler);
+    };
+  }, [unlockAudio]);
+
+  // ==========================================================================
+  // 🔔 RINGTONE — Web Audio API দিয়ে, কোনো audio ফাইল লাগে না
+  // ==========================================================================
+  const ringCtxRef = useRef<AudioContext | null>(null);
+  const ringTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopRingtone = useCallback(() => {
+    if (ringTimerRef.current) {
+      clearInterval(ringTimerRef.current);
+      ringTimerRef.current = null;
+    }
+    if (ringCtxRef.current) {
+      ringCtxRef.current.close().catch(() => {});
+      ringCtxRef.current = null;
+    }
+  }, []);
+
+  const startRingtone = useCallback(() => {
+    if (ringTimerRef.current) return;
+    try {
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new Ctx();
+      ringCtxRef.current = ctx;
+
+      const beep = () => {
+        if (!ringCtxRef.current) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = 480;
+        gain.gain.setValueAtTime(0.001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.85);
+      };
+
+      beep();
+      ringTimerRef.current = setInterval(beep, 2000);
+    } catch {
+      // AudioContext block করা থাকলে চুপচাপ skip
+    }
+  }, []);
+
+  // ==========================================================================
 
   const handleCleanup = useCallback(() => {
+    stopRingtone();
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
@@ -69,11 +154,14 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     }
     pendingCandidatesRef.current = [];
     offerSentRef.current = false;
+    remotePeerIdRef.current = null;
     setRemoteStream(null);
+    setNeedsAudioTap(false);
     setIsMuted(false);
     setIsVideoOff(false);
+    setIncomingCall(null);
     endCall();
-  }, [endCall]);
+  }, [endCall, setIncomingCall, stopRingtone]);
 
   const startMediaStream = async (videoEnabled: boolean) => {
     try {
@@ -84,11 +172,21 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       localStreamRef.current = stream;
       if (myVideoRef.current) {
         myVideoRef.current.srcObject = stream;
-        myVideoRef.current.play().catch((e) => console.error("Local video play error:", e));
+        myVideoRef.current.play().catch(() => {});
       }
       return stream;
-    } catch (err) {
-      console.error("Error accessing media devices:", err);
+    } catch (err: any) {
+      // 🌟 FIX: আগে error চুপচাপ গিলে ফেলা হতো — ইউজারের মনে হতো বাটন কাজ করছে না।
+      if (err?.name === "NotAllowedError") {
+        toast.error("Microphone permission denied. Browser settings theke allow koro.");
+      } else if (err?.name === "NotReadableError") {
+        toast.error("Mic onno app use korche. Sheta bondho kore abar try koro.");
+      } else if (err?.name === "NotFoundError") {
+        toast.error("Mic/camera pawa jacche na.");
+      } else {
+        toast.error("Call shuru kora gelo na. Mic/camera access check koro.");
+      }
+      console.error("getUserMedia error:", err);
       return null;
     }
   };
@@ -96,32 +194,32 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   useEffect(() => {
     if (myVideoRef.current && localStreamRef.current) {
       myVideoRef.current.srcObject = localStreamRef.current;
-      myVideoRef.current.play().catch((e) => console.error("Local video effect play error:", e));
+      myVideoRef.current.play().catch(() => {});
     }
   }, [callActive, isCalling, isVideoOff]);
 
-  // 🌟 FIX #2: remote stream attach করা হয় element mount হওয়ার পর।
-  // audio element এখন সবসময় render হয় (নিচে দেখো), তাই callActive হওয়ার সাথে
-  // সাথেই এখানে attach হয়ে যায় — caller আর receiver দুজনের জন্যই।
+  // remote stream attach — element mount হওয়ার পর
   useEffect(() => {
     if (!remoteStream) return;
 
     if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = remoteStream;
-      remoteAudioRef.current
-        .play()
-        .catch((e) => console.error("Remote audio play error:", e));
+      const el = remoteAudioRef.current;
+      el.srcObject = remoteStream;
+      el.muted = false;
+      el.play()
+        .then(() => setNeedsAudioTap(false))
+        .catch((e) => {
+          console.error("Remote audio play blocked:", e);
+          setNeedsAudioTap(true); // UI-তে tap বাটন দেখাও
+        });
     }
 
     if (userVideoRef.current) {
       userVideoRef.current.srcObject = remoteStream;
-      userVideoRef.current
-        .play()
-        .catch((e) => console.error("Remote video play error:", e));
+      userVideoRef.current.play().catch(() => {});
     }
   }, [remoteStream, callActive, isVideoOff, incomingCall]);
 
-  // buffer-এ জমা candidate গুলো remoteDescription বসার পর একসাথে যোগ করা
   const flushPendingCandidates = async () => {
     const pc = peerConnectionRef.current;
     if (!pc || !pc.remoteDescription) return;
@@ -141,6 +239,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   const createPeerConnection = (targetUserId: string) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerConnectionRef.current = pc;
+    remotePeerIdRef.current = targetUserId;
 
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
@@ -148,7 +247,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       });
     }
 
-    // 🌟 রিসিভার ও কলার উভয়ের জন্যই রিমোট stream state-এ রাখা হচ্ছে (attach উপরের useEffect-এ)
     pc.ontrack = (event) => {
       setRemoteStream(event.streams[0]);
     };
@@ -163,17 +261,60 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       }
     };
 
-    // 🌟 DEBUG: connection আসলে establish হচ্ছে কিনা দেখার সবচেয়ে সহজ উপায়।
-    // "failed" দেখালে বুঝতে হবে TURN credential কাজ করছে না (relay path নেই)।
     pc.oniceconnectionstatechange = () => {
       console.log("ICE STATE:", pc.iceConnectionState);
       if (pc.iceConnectionState === "failed") {
-        console.error("❌ ICE failed — TURN server / credential চেক করো");
+        console.error("❌ ICE failed — TURN credential চেক করো");
+        toast.error("Connection establish kora gelo na (network issue).");
       }
     };
 
     return pc;
   };
+
+  // ==========================================================================
+  // 🌟 FIX #3: incoming call এখন এই component নিজেই শোনে
+  // ==========================================================================
+  // আগে receive_call_offer শুধু useSocket.ts-এ ধরা হতো, আর useSocket চলে
+  // chat page-এ। তাই ইউজার অন্য route-এ থাকলে incoming call কোথাও দেখাতো না —
+  // "website-এ (chat page-এ) থাকলেই কল দেখা যায়" সমস্যাটা এখান থেকেই।
+  // এই listener modal-এর ভেতরে থাকায় modal-টা root layout-এ mount করলে
+  // অ্যাপের যেকোনো page থেকে কল ধরা যাবে।
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleCallOffer = (data: {
+      from: string;
+      name: string;
+      image?: string;
+      sdp: any;
+      isVideo?: boolean;
+    }) => {
+      // ইতিমধ্যে কলে থাকলে নতুন কল ignore (busy signal)
+      if (callActive || isCalling || incomingCall) {
+        socket.emit("end_call", { targetUserId: data.from, from: currentUserId });
+        return;
+      }
+
+      setIncomingCall(data as any);
+      startRingtone();
+
+      // ট্যাব background-এ থাকলে system notification
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try {
+          new Notification(`${data.name || "Someone"} is calling`, {
+            body: data.isVideo ? "Incoming video call" : "Incoming audio call",
+            tag: "incoming-call",
+          });
+        } catch {}
+      }
+    };
+
+    socket.on("receive_call_offer", handleCallOffer);
+    return () => {
+      socket.off("receive_call_offer", handleCallOffer);
+    };
+  }, [socket, callActive, isCalling, incomingCall, setIncomingCall, startRingtone, currentUserId]);
 
   // কলার সাইড থেকে অফার পাঠানো
   useEffect(() => {
@@ -181,10 +322,14 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
     offerSentRef.current = true;
 
+    // gesture এখনো "তাজা" — এখানেই audio unlock করে রাখা হচ্ছে
+    unlockAudio();
+
     (async () => {
       const stream = await startMediaStream(isVideoCall);
       if (!stream) {
         offerSentRef.current = false;
+        endCall();
         return;
       }
 
@@ -201,7 +346,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
         isVideo: isVideoCall,
       });
     })();
-  }, [isCalling, isVideoCall, targetUser, socket, currentUserId]);
+  }, [isCalling, isVideoCall, targetUser, socket, currentUserId, unlockAudio, endCall]);
 
   // সকেট ইভেন্ট লিসেনার
   useEffect(() => {
@@ -211,6 +356,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       const pc = peerConnectionRef.current;
       if (!pc) return;
 
+      stopRingtone();
       await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
       await flushPendingCandidates();
       acceptCall();
@@ -221,9 +367,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
       const pc = peerConnectionRef.current;
 
-      // 🌟 FIX #1: pc নেই (receiver এখনো accept করেনি) বা remoteDescription
-      // এখনো বসেনি — দুই ক্ষেত্রেই addIceCandidate ব্যর্থ হয়। তাই drop না করে
-      // buffer-এ রাখা হচ্ছে, পরে flush হবে।
+      // pc নেই (receiver এখনো accept করেনি) বা remoteDescription বসেনি — buffer করো
       if (!pc || !pc.remoteDescription) {
         pendingCandidatesRef.current.push(data.candidate);
         return;
@@ -245,35 +389,28 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     socket.on("receive_end_call", handleEndCallEvent);
 
     return () => {
-      // 🌟 FIX: আগে socket.off("receive_ice_candidate") handler ছাড়া কল করা হতো,
-      // যা ওই event-এর সব listener মুছে দেয় — useSocket.ts-এ registered
-      // listener গুলোও। এখন নির্দিষ্ট handler reference দিয়ে remove করা হচ্ছে।
       socket.off("receive_call_answer", handleCallAnswer);
       socket.off("receive_ice_candidate", handleIceCandidate);
       socket.off("receive_end_call", handleEndCallEvent);
     };
-  }, [socket, handleCleanup, acceptCall]);
+  }, [socket, handleCleanup, acceptCall, stopRingtone]);
 
-  // 🌟 রিসিভার যখন কল রিসিভ বা অ্যাক্সেপ্ট করবে
   const handleAccept = async () => {
     if (!incomingCall) return;
 
-    const callTypeVideo = incomingCall.isVideo ?? true;
+    stopRingtone();
 
-    // 🔍 TEMPORARY DEBUG — কোন error-এ getUserMedia fail করছে সেটা দেখার জন্য
-    let stream: MediaStream | null = null;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: callTypeVideo,
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
-      localStreamRef.current = stream;
-      if (myVideoRef.current) {
-        myVideoRef.current.srcObject = stream;
-        myVideoRef.current.play().catch(() => {});
-      }
-    } catch (err: any) {
-      alert(`MIC ERROR: ${err?.name} — ${err?.message}`);
+    // 🔊 এই ক্লিকটাই user gesture — এখানেই audio unlock করে রাখা হচ্ছে,
+    // কোনো await-এর আগে। পরে stream এলে নিজে থেকেই বাজবে।
+    unlockAudio();
+
+    const callTypeVideo = incomingCall.isVideo ?? true;
+    const stream = await startMediaStream(callTypeVideo);
+
+    if (!stream) {
+      // permission fail — caller-কে জানাও, নাহলে তার দিকে ring বাজতেই থাকবে
+      socket.emit("end_call", { targetUserId: incomingCall.from, from: currentUserId });
+      handleCleanup();
       return;
     }
 
@@ -313,21 +450,28 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   };
 
   const handleEndCall = () => {
-    const targetId = targetUser?.id || incomingCall?.from;
+    // 🌟 FIX #2: ref থেকে নেওয়া হচ্ছে — store-এর state clear হয়ে গেলেও টিকে থাকে,
+    // তাই দুই দিক থেকেই hangup ঠিকমতো কাজ করে।
+    const targetId = remotePeerIdRef.current || targetUser?.id || incomingCall?.from;
     if (targetId && socket) {
       socket.emit("end_call", { targetUserId: targetId, from: currentUserId });
     }
     handleCleanup();
   };
 
+  // ইনকামিং কল reject (এখনো peerConnection তৈরি হয়নি, তাই from সরাসরি)
+  const handleReject = () => {
+    if (incomingCall && socket) {
+      socket.emit("end_call", { targetUserId: incomingCall.from, from: currentUserId });
+    }
+    handleCleanup();
+  };
+
   if (!isCalling && !incomingCall && !callActive) return null;
 
-  // 🌟 FIX #3: receiver-এর জন্য call type ও ringing state আলাদা করা।
-  // isRinging = incoming call এসেছে কিন্তু এখনো accept করা হয়নি।
   const isRinging = !!incomingCall && !callActive;
   const activeCallTypeVideo = incomingCall ? (incomingCall.isVideo ?? true) : isVideoCall;
 
-  // 🌟 ফিক্স: কলার বা রিসিভার উভয়ের জন্যই সঠিক নাম ও ছবি ম্যাপ করা হলো যাতে "AC" বা "User" না দেখায়
   const activeUser = targetUser?.name
     ? targetUser
     : incomingCall
@@ -336,14 +480,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4">
-      {/*
-        🌟 FIX #2: audio element এখন সবসময় render হয়, শর্তের বাইরে।
-        আগে এটা `(isCalling || callActive) && !incomingCall` ব্লকের ভেতরে ছিল —
-        অর্থাৎ receiver-এর ক্ষেত্রে (যার incomingCall সেট থাকে) এই element
-        কখনো DOM-এ আসতো না, remoteAudioRef চিরকাল null থাকতো, আর remote
-        audio কোথাও attach হতো না। এটাই ছিল "call connect হয় কিন্তু sound নেই"
-        এর সবচেয়ে সরাসরি কারণ।
-      */}
+      {/* audio element সবসময় render — receiver-এর জন্যও mount থাকা জরুরি */}
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
       {isRinging && (
@@ -362,7 +499,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
             </p>
           </div>
           <div className="flex justify-center gap-4 pt-2">
-            <Button variant="destructive" size="icon" className="rounded-full h-12 w-12 cursor-pointer" onClick={handleEndCall}>
+            <Button variant="destructive" size="icon" className="rounded-full h-12 w-12 cursor-pointer" onClick={handleReject}>
               <PhoneOff className="h-5 w-5" />
             </Button>
             <Button variant="default" size="icon" className="rounded-full h-12 w-12 bg-green-600 hover:bg-green-700 cursor-pointer" onClick={handleAccept}>
@@ -372,15 +509,27 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
         </div>
       )}
 
-      {/*
-        🌟 FIX #3: শর্ত থেকে `!incomingCall` সরানো হলো।
-        আগে receiver accept করার পর callActive=true হতো কিন্তু incomingCall
-        store-এ থেকেই যেত — ফলে ringing UI-ও হাইড হতো, আর এই main UI-ও render
-        হতো না। receiver শুধু কালো স্ক্রিন দেখতো, কোনো control বা video ছিল না।
-        এখন isRinging দিয়ে দুটো state আলাদা করা হয়েছে।
-      */}
       {(isCalling || callActive) && !isRinging && (
         <div className="relative w-full max-w-4xl h-[80vh] bg-muted/20 rounded-2xl overflow-hidden border flex flex-col items-center justify-center shadow-2xl">
+
+          {/* 🔊 autoplay block হলে ইউজারকে একটা tap দিয়ে sound চালু করার সুযোগ */}
+          {needsAudioTap && (
+            <button
+              onClick={() => {
+                audioUnlockedRef.current = false;
+                unlockAudio();
+                const el = remoteAudioRef.current;
+                if (el) {
+                  el.muted = false;
+                  el.play().then(() => setNeedsAudioTap(false)).catch(() => {});
+                }
+              }}
+              className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full bg-yellow-500 px-4 py-2 text-sm font-semibold text-black shadow-lg"
+            >
+              <VolumeX className="h-4 w-4" />
+              Tap to enable sound
+            </button>
+          )}
 
           {activeCallTypeVideo ? (
             <div className="relative w-full h-full flex items-center justify-center bg-black">
