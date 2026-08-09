@@ -35,10 +35,15 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-
-  // 🌟 FIX #1-এর অংশ: browser autoplay policy-র কারণে remote audio play() reject
-  // হলে এই flag true হয় আর UI-তে "Tap to enable sound" বাটন দেখায়।
   const [needsAudioTap, setNeedsAudioTap] = useState(false);
+
+  // 🌟 FIX: remote peer-এর camera অবস্থা আলাদা state-এ।
+  // আগে remote video hide/overlay সবই `isVideoOff` (নিজের state) দিয়ে হতো,
+  // তাই এক পাশ camera বন্ধ করলে সে নিজের স্ক্রিনে উল্টো পাশের ভিডিওটাও হারিয়ে
+  // ফেলতো — মনে হতো দুই দিকের camera বন্ধ হয়ে গেছে।
+  // remote track disable হলে browser ওই track-এ "mute" event ফায়ার করে, সেটা
+  // ধরেই এই state আপডেট হয় — কোনো extra socket event লাগে না।
+  const [remoteVideoOff, setRemoteVideoOff] = useState(false);
 
   const myVideoRef = useRef<HTMLVideoElement | null>(null);
   const userVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -48,24 +53,11 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const offerSentRef = useRef(false);
   const audioUnlockedRef = useRef(false);
-
-  // 🌟 FIX #2: remote peer-এর id আলাদা ref-এ রাখা।
-  // আগে end_call পাঠাতে `targetUser?.id || incomingCall?.from` ব্যবহার হতো —
-  // কিন্তু receiver-এর targetUser থাকে না, আর accept করার পর store থেকে
-  // incomingCall clear হয়ে গেলে দুটোই undefined হয়ে যেত। ফলে এক দিক থেকে কল
-  // কাটলে emit-ই হতো না, উল্টো দিকে কল চলতেই থাকতো (one-sided hangup)।
-  // এই ref কল শুরুর মুহূর্তে একবার সেট হয়, cleanup পর্যন্ত টিকে থাকে।
   const remotePeerIdRef = useRef<string | null>(null);
 
   // ==========================================================================
-  // 🔊 AUDIO UNLOCK — mobile-এ এক দিকের sound না আসার আসল কারণ
+  // 🔊 AUDIO UNLOCK — mobile-এ এক দিকের sound না আসার কারণ
   // ==========================================================================
-  // Chrome/Safari mobile-এ user gesture ছাড়া audio play() করা যায় না।
-  // কল শুরুর সময় ইউজার বাটনে ক্লিক করে, কিন্তু remote stream আসে তার কয়েক
-  // সেকেন্ড পরে — ততক্ষণে gesture context শেষ, play() reject হয়, আর ওই পাশের
-  // ইউজার কিছুই শুনতে পায় না (উল্টো দিকে ঠিকই শোনা যায়, তাই one-way মনে হয়)।
-  // সমাধান: gesture-এর ভেতরেই খালি audio element একবার muted play করে "unlock"
-  // করে রাখা — তারপর stream attach হলে নিজে থেকেই বাজবে।
   const unlockAudio = useCallback(() => {
     const el = remoteAudioRef.current;
     if (!el || audioUnlockedRef.current) return;
@@ -77,12 +69,9 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
         audioUnlockedRef.current = true;
         setNeedsAudioTap(false);
       })
-      .catch(() => {
-        // unlock করা গেল না — UI-তে tap বাটন দেখানো হবে
-      });
+      .catch(() => {});
   }, []);
 
-  // যেকোনো tap/click-এ unlock করার চেষ্টা (সবচেয়ে নির্ভরযোগ্য fallback)
   useEffect(() => {
     const handler = () => unlockAudio();
     document.addEventListener("pointerdown", handler);
@@ -94,7 +83,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   }, [unlockAudio]);
 
   // ==========================================================================
-  // 🔔 RINGTONE — Web Audio API দিয়ে, কোনো audio ফাইল লাগে না
+  // 🔔 RINGTONE — Web Audio API, কোনো audio ফাইল লাগে না
   // ==========================================================================
   const ringCtxRef = useRef<AudioContext | null>(null);
   const ringTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -134,9 +123,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
       beep();
       ringTimerRef.current = setInterval(beep, 2000);
-    } catch {
-      // AudioContext block করা থাকলে চুপচাপ skip
-    }
+    } catch {}
   }, []);
 
   // ==========================================================================
@@ -159,6 +146,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     setNeedsAudioTap(false);
     setIsMuted(false);
     setIsVideoOff(false);
+    setRemoteVideoOff(false);
     setIncomingCall(null);
     endCall();
   }, [endCall, setIncomingCall, stopRingtone]);
@@ -176,7 +164,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       }
       return stream;
     } catch (err: any) {
-      // 🌟 FIX: আগে error চুপচাপ গিলে ফেলা হতো — ইউজারের মনে হতো বাটন কাজ করছে না।
       if (err?.name === "NotAllowedError") {
         toast.error("Microphone permission denied. Browser settings theke allow koro.");
       } else if (err?.name === "NotReadableError") {
@@ -210,7 +197,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
         .then(() => setNeedsAudioTap(false))
         .catch((e) => {
           console.error("Remote audio play blocked:", e);
-          setNeedsAudioTap(true); // UI-তে tap বাটন দেখাও
+          setNeedsAudioTap(true);
         });
     }
 
@@ -218,7 +205,40 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       userVideoRef.current.srcObject = remoteStream;
       userVideoRef.current.play().catch(() => {});
     }
-  }, [remoteStream, callActive, isVideoOff, incomingCall]);
+  }, [remoteStream, callActive, remoteVideoOff, incomingCall]);
+
+  // 🌟 FIX: remote video track-এর mute/unmute শোনা।
+  // উল্টো পাশের ইউজার camera বন্ধ করলে (track.enabled = false) তার পাঠানো
+  // track এই পাশে "muted" হয়ে যায় আর browser mute event ফায়ার করে।
+  // এটাই remote camera off বোঝার নির্ভরযোগ্য উপায় — কোনো socket event লাগে না।
+  useEffect(() => {
+    if (!remoteStream) {
+      setRemoteVideoOff(false);
+      return;
+    }
+
+    const videoTrack = remoteStream.getVideoTracks()[0];
+    if (!videoTrack) {
+      setRemoteVideoOff(true); // audio-only call
+      return;
+    }
+
+    setRemoteVideoOff(videoTrack.muted);
+
+    const onMute = () => setRemoteVideoOff(true);
+    const onUnmute = () => setRemoteVideoOff(false);
+    const onEnded = () => setRemoteVideoOff(true);
+
+    videoTrack.addEventListener("mute", onMute);
+    videoTrack.addEventListener("unmute", onUnmute);
+    videoTrack.addEventListener("ended", onEnded);
+
+    return () => {
+      videoTrack.removeEventListener("mute", onMute);
+      videoTrack.removeEventListener("unmute", onUnmute);
+      videoTrack.removeEventListener("ended", onEnded);
+    };
+  }, [remoteStream]);
 
   const flushPendingCandidates = async () => {
     const pc = peerConnectionRef.current;
@@ -273,13 +293,8 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   };
 
   // ==========================================================================
-  // 🌟 FIX #3: incoming call এখন এই component নিজেই শোনে
+  // incoming call — এই component নিজেই শোনে, তাই যেকোনো page থেকে কল ধরা যায়
   // ==========================================================================
-  // আগে receive_call_offer শুধু useSocket.ts-এ ধরা হতো, আর useSocket চলে
-  // chat page-এ। তাই ইউজার অন্য route-এ থাকলে incoming call কোথাও দেখাতো না —
-  // "website-এ (chat page-এ) থাকলেই কল দেখা যায়" সমস্যাটা এখান থেকেই।
-  // এই listener modal-এর ভেতরে থাকায় modal-টা root layout-এ mount করলে
-  // অ্যাপের যেকোনো page থেকে কল ধরা যাবে।
   useEffect(() => {
     if (!socket) return;
 
@@ -290,7 +305,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       sdp: any;
       isVideo?: boolean;
     }) => {
-      // ইতিমধ্যে কলে থাকলে নতুন কল ignore (busy signal)
       if (callActive || isCalling || incomingCall) {
         socket.emit("end_call", { targetUserId: data.from, from: currentUserId });
         return;
@@ -299,7 +313,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       setIncomingCall(data as any);
       startRingtone();
 
-      // ট্যাব background-এ থাকলে system notification
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
         try {
           new Notification(`${data.name || "Someone"} is calling`, {
@@ -321,8 +334,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     if (!isCalling || !targetUser || offerSentRef.current) return;
 
     offerSentRef.current = true;
-
-    // gesture এখনো "তাজা" — এখানেই audio unlock করে রাখা হচ্ছে
     unlockAudio();
 
     (async () => {
@@ -367,7 +378,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
       const pc = peerConnectionRef.current;
 
-      // pc নেই (receiver এখনো accept করেনি) বা remoteDescription বসেনি — buffer করো
       if (!pc || !pc.remoteDescription) {
         pendingCandidatesRef.current.push(data.candidate);
         return;
@@ -399,16 +409,12 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     if (!incomingCall) return;
 
     stopRingtone();
-
-    // 🔊 এই ক্লিকটাই user gesture — এখানেই audio unlock করে রাখা হচ্ছে,
-    // কোনো await-এর আগে। পরে stream এলে নিজে থেকেই বাজবে।
     unlockAudio();
 
     const callTypeVideo = incomingCall.isVideo ?? true;
     const stream = await startMediaStream(callTypeVideo);
 
     if (!stream) {
-      // permission fail — caller-কে জানাও, নাহলে তার দিকে ring বাজতেই থাকবে
       socket.emit("end_call", { targetUserId: incomingCall.from, from: currentUserId });
       handleCleanup();
       return;
@@ -450,8 +456,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   };
 
   const handleEndCall = () => {
-    // 🌟 FIX #2: ref থেকে নেওয়া হচ্ছে — store-এর state clear হয়ে গেলেও টিকে থাকে,
-    // তাই দুই দিক থেকেই hangup ঠিকমতো কাজ করে।
     const targetId = remotePeerIdRef.current || targetUser?.id || incomingCall?.from;
     if (targetId && socket) {
       socket.emit("end_call", { targetUserId: targetId, from: currentUserId });
@@ -459,7 +463,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     handleCleanup();
   };
 
-  // ইনকামিং কল reject (এখনো peerConnection তৈরি হয়নি, তাই from সরাসরি)
   const handleReject = () => {
     if (incomingCall && socket) {
       socket.emit("end_call", { targetUserId: incomingCall.from, from: currentUserId });
@@ -480,7 +483,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4">
-      {/* audio element সবসময় render — receiver-এর জন্যও mount থাকা জরুরি */}
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
       {isRinging && (
@@ -512,7 +514,6 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       {(isCalling || callActive) && !isRinging && (
         <div className="relative w-full max-w-4xl h-[80vh] bg-muted/20 rounded-2xl overflow-hidden border flex flex-col items-center justify-center shadow-2xl">
 
-          {/* 🔊 autoplay block হলে ইউজারকে একটা tap দিয়ে sound চালু করার সুযোগ */}
           {needsAudioTap && (
             <button
               onClick={() => {
@@ -533,9 +534,23 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
           {activeCallTypeVideo ? (
             <div className="relative w-full h-full flex items-center justify-center bg-black">
-              <video ref={userVideoRef} autoPlay playsInline className={`w-full h-full object-cover ${isVideoOff && callActive ? "hidden" : ""}`} />
+              {/*
+                🌟 FIX: hidden করার শর্ত `isVideoOff` (নিজের) থেকে `remoteVideoOff`
+                (উল্টো পাশের) করা হলো। আগে নিজের camera বন্ধ করলে উল্টো পাশের
+                ভিডিওটাও hidden হয়ে যেত।
+              */}
+              <video
+                ref={userVideoRef}
+                autoPlay
+                playsInline
+                className={`w-full h-full object-cover ${remoteVideoOff && callActive ? "hidden" : ""}`}
+              />
 
-              {(!callActive || isVideoOff) && (
+              {/*
+                🌟 FIX: এই overlay-টা উল্টো পাশের ভিডিও ঢেকে দেয়, তাই এর শর্তও
+                remote-এর অবস্থার উপর হওয়া উচিত — নিজের `isVideoOff`-এর উপর না।
+              */}
+              {(!callActive || remoteVideoOff) && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 z-10 space-y-3">
                   <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-primary/40 bg-muted flex items-center justify-center shadow-2xl">
                     {activeUser?.image ? (
@@ -553,6 +568,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
                 </div>
               )}
 
+              {/* self preview — এখানেই শুধু নিজের isVideoOff কাজে লাগে */}
               <div className="absolute bottom-24 right-4 w-32 h-44 bg-zinc-900 rounded-xl overflow-hidden border-2 border-background shadow-lg z-20 flex items-center justify-center">
                 {isVideoOff ? (
                   <div className="flex flex-col items-center justify-center text-center p-2">
