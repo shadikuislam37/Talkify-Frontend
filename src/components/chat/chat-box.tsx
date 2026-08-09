@@ -639,6 +639,7 @@ export default function ChatBox({
           onOpenChange={setIsGroupDetailsOpen}
           conversationId={conversationId}
           groupName={conversation?.name || "Group Chat"}
+          groupImage= {conversation?.image || conversation?.groupImage}
           members={conversation?.users || []}
           adminIds={conversation?.adminIds || []}
           currentUserId={currentUserId}

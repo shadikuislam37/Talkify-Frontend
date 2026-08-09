@@ -143,6 +143,7 @@ export interface Conversation {
   name?: string | null;
   isGroup?: boolean;
   image?: string | null;
+  groupImage?: string | null;
   adminIds?: string[];
   createdAt?: string | Date;
   updatedAt?: string | Date;
