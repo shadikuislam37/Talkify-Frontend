@@ -207,10 +207,15 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     }
   }, [remoteStream, callActive, remoteVideoOff, incomingCall]);
 
-  // 🌟 FIX: remote video track-এর mute/unmute শোনা।
-  // উল্টো পাশের ইউজার camera বন্ধ করলে (track.enabled = false) তার পাঠানো
-  // track এই পাশে "muted" হয়ে যায় আর browser mute event ফায়ার করে।
-  // এটাই remote camera off বোঝার নির্ভরযোগ্য উপায় — কোনো socket event লাগে না।
+  // 🌟 FIX (v4): remote camera state এখন socket signaling দিয়ে আসে।
+  //
+  // v3-তে remote track-এর "mute"/"unmute" event শুনে বোঝার চেষ্টা করা হয়েছিল।
+  // কাগজে ওটাই standard উপায়, কিন্তু বাস্তবে TURN relay-র উপর দিয়ে গেলে সব
+  // browser ওই event নির্ভরযোগ্যভাবে ফায়ার করে না — ফলে remoteVideoOff কখনো
+  // আপডেটই হতো না। তাই এখন উল্টো পাশ camera toggle করলে সরাসরি socket-এ
+  // জানিয়ে দেয় (toggle_video → remote_video_toggled)। এটা deterministic।
+  //
+  // track না থাকা (audio-only call) কেসটা আলাদা করে ধরা হচ্ছে নিচে।
   useEffect(() => {
     if (!remoteStream) {
       setRemoteVideoOff(false);
@@ -219,26 +224,28 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
     const videoTrack = remoteStream.getVideoTracks()[0];
     if (!videoTrack) {
-      setRemoteVideoOff(true); // audio-only call
+      setRemoteVideoOff(true); // audio-only call — দেখানোর মতো video নেই
       return;
     }
 
-    setRemoteVideoOff(videoTrack.muted);
-
-    const onMute = () => setRemoteVideoOff(true);
-    const onUnmute = () => setRemoteVideoOff(false);
     const onEnded = () => setRemoteVideoOff(true);
-
-    videoTrack.addEventListener("mute", onMute);
-    videoTrack.addEventListener("unmute", onUnmute);
     videoTrack.addEventListener("ended", onEnded);
-
-    return () => {
-      videoTrack.removeEventListener("mute", onMute);
-      videoTrack.removeEventListener("unmute", onUnmute);
-      videoTrack.removeEventListener("ended", onEnded);
-    };
+    return () => videoTrack.removeEventListener("ended", onEnded);
   }, [remoteStream]);
+
+  // উল্টো পাশ camera on/off করলে server এই event পাঠায়
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleRemoteVideoToggled = (data: { from: string; isVideoOff: boolean }) => {
+      setRemoteVideoOff(!!data.isVideoOff);
+    };
+
+    socket.on("remote_video_toggled", handleRemoteVideoToggled);
+    return () => {
+      socket.off("remote_video_toggled", handleRemoteVideoToggled);
+    };
+  }, [socket]);
 
   const flushPendingCandidates = async () => {
     const pc = peerConnectionRef.current;
@@ -447,11 +454,19 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   };
 
   const toggleVideo = () => {
-    if (localStreamRef.current) {
-      localStreamRef.current.getVideoTracks().forEach((track) => {
-        track.enabled = !track.enabled;
-      });
-      setIsVideoOff(!isVideoOff);
+    if (!localStreamRef.current) return;
+
+    const next = !isVideoOff;
+
+    localStreamRef.current.getVideoTracks().forEach((track) => {
+      track.enabled = !next;
+    });
+    setIsVideoOff(next);
+
+    // 🌟 উল্টো পাশকে জানিয়ে দাও — নাহলে সে বুঝবে না camera বন্ধ হয়েছে
+    const targetId = remotePeerIdRef.current;
+    if (targetId && socket) {
+      socket.emit("toggle_video", { targetUserId: targetId, isVideoOff: next });
     }
   };
 
