@@ -158,7 +158,7 @@ export const ChatLayout = ({
               <AvatarFallback className="text-xs font-semibold">
                 {currentUserName ? currentUserName.slice(0, 2).toUpperCase() : "CU"}
               </AvatarFallback>
-            </Avatar>e
+            </Avatar>
             <div className="flex flex-col min-w-0">
               <span className="text-sm font-semibold truncate leading-none">
                 {currentUserName}
