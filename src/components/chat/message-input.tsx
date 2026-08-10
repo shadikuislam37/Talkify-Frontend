@@ -3,11 +3,12 @@
 import React, { useState, useRef } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Button } from "@/components/ui/button";
-import { Send, X, FileText, Smile } from "lucide-react";
+import { Send, X, FileText, Smile, Mic, Trash2 } from "lucide-react";
 import { sendMessageSchema } from "@/schemas/chat.schema";
 import Image from "next/image";
 import { Message } from "@/types";
 import MediaUploadButton from "./MediaUploadButton";
+import { mediaApi } from "@/lib/api";
 
 // 🌟 ইমোজি মার্ট ইম্পোর্ট
 import Picker from "@emoji-mart/react";
@@ -44,6 +45,15 @@ export const MessageInput = ({
 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 🌟 ভয়েস রেকর্ডিং এর জন্য নতুন লোকাল স্টেট (অরিজিনাল কোডের লাইন ঠিক রেখে যুক্ত করা হয়েছে)
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const form = useForm({
     defaultValues: {
@@ -92,6 +102,91 @@ export const MessageInput = ({
       }
     },
   });
+
+  // 🌟 ভয়েস নোট রেকর্ডিং শুরু করার ফাংশন
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        stream.getTracks().forEach((track) => track.stop());
+        await uploadAndSendAudio(audioBlob);
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      timerRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } catch (error) {
+      console.error("Microphone permission denied:", error);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+  };
+
+  const uploadAndSendAudio = async (audioBlob: Blob) => {
+    try {
+      setIsUploadingAudio(true);
+      const formData = new FormData();
+      formData.append("file", audioBlob, `voice-note-${Date.now()}.webm`);
+      formData.append("conversationId", conversationId);
+      formData.append("fileType", "audio/webm");
+
+      const response: any = await mediaApi.post("/messages/upload-audio", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      if (response && response.fileUrl) {
+        const payload = {
+          conversationId,
+          fileUrl: response.fileUrl,
+          fileType: response.fileType || "audio/webm",
+          fileName: response.fileName || "Voice Note",
+          replyToId: replyingTo?.id || undefined,
+        };
+        await onSendMessage(payload);
+        onCancelReply();
+      }
+    } catch (error) {
+      console.error("Failed to upload voice note:", error);
+    } finally {
+      setIsUploadingAudio(false);
+    }
+  };
+
+  const formatAudioTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+  };
 
   const autoResize = (el: HTMLTextAreaElement) => {
     el.style.height = "auto";
@@ -196,8 +291,33 @@ export const MessageInput = ({
         }}
         className="flex gap-1.5 sm:gap-2 items-end p-2 sm:p-4 relative"
       >
-        <div className="shrink-0 pb-1">
+        <div className="shrink-0 pb-1 flex items-center gap-1">
           <MediaUploadButton onUploadComplete={handleUploadComplete} />
+
+          {/* 🌟 ভয়েস রেকর্ডার বাটন ও ইউআই */}
+          {isUploadingAudio ? (
+            <span className="text-xs text-muted-foreground px-2 animate-pulse">Sending...</span>
+          ) : isRecording ? (
+            <div className="flex items-center gap-2 bg-red-500/10 text-red-500 px-3 py-1.5 rounded-full animate-pulse">
+              <span className="w-2 h-2 rounded-full bg-red-500"></span>
+              <span className="text-xs font-semibold">{formatAudioTime(recordingTime)}</span>
+              <button type="button" onClick={cancelRecording} className="p-1 hover:bg-red-500/20 rounded-full" title="Cancel">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" onClick={stopRecording} className="p-1 bg-red-500 text-white rounded-full" title="Send">
+                <Send className="h-3 w-3" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={startRecording}
+              className="p-2 hover:bg-muted rounded-full text-muted-foreground transition-colors cursor-pointer"
+              title="Record voice note"
+            >
+              <Mic className="h-5 w-5" />
+            </button>
+          )}
         </div>
 
         <form.Field name="body">
