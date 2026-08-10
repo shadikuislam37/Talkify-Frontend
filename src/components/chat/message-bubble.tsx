@@ -9,6 +9,7 @@ import { Check, CheckCheck, CornerUpLeft, Edit2, Reply, Smile, Trash2, Loader2, 
 import { Message } from "@/types";
 import { formatTime } from "@/lib/utils";
 import { decryptMessage } from "@/lib/crypto";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "😤"];
 
@@ -129,25 +130,17 @@ export function MessageBubble({
   const isReadByOther = React.useMemo(() => {
     if (!isMe) return false;
 
-    // ১. মেসেজের নিজস্ব স্ট্যাটাস যদি READ হয়
     if (msg.status === "READ" || msg.status === "DELIVERED") {
-      // আপনি যদি ডেলিভারড হলেও টিক দিতে চান বা শুধু রিড হলে:
       if (msg.status === "READ") return true;
     }
 
-    // ২. reads অ্যারে চেক
     if (msg.reads && Array.isArray(msg.reads) && msg.reads.length > 0) {
-      const hasOtherRead = msg.reads.some((r) => {
+      const hasOtherRead = msg.reads.some((r: any) => {
         const readerId = typeof r === "string" ? r : r.userId;
         return Boolean(readerId && String(readerId) !== String(currentUserId));
       });
       if (hasOtherRead) return true;
     }
-
-    // ৩. 🌟 ফুল-প্রুফ ফিক্স: যদি কনভার্সেশনের অন্য কোনো ইউজার চ্যাটে থাকে বা মেসেজ টাইম স্ট্যাম্প অনুযায়ী পড়া হয়ে থাকে, 
-    // অথবা আপনার যদি এমন কোনো প্রপার্টি থাকে যা দিয়ে বোঝা যায় অপরপক্ষ অ্যাক্টিভ বা সিন করেছে
-    // ব্যাকএন্ড থেকে সকেট ইভেন্টে যদি মেসেজ লিস্ট রিফেচ (queryClient.invalidateQueries) না হয়, 
-    // তবে এটি কাজ করবে না। তাই সকেট লিসেনারে ক্যাশ আপডেট নিশ্চিত করতে হবে।
 
     return false;
   }, [msg.reads, msg.status, currentUserId, isMe]);
@@ -182,8 +175,6 @@ export function MessageBubble({
         </div>
       )}
 
-      {/* min-w-0 — flex row-কে শ্রিঙ্ক করার অনুমতি দিতে, নাহলে fixed-width attachment
-          বাবলকে ভেঙে/ওভারফ্লো করে বের করে দিত মোবাইলে */}
       <div className={`flex items-end gap-2 w-full min-w-0 ${isMe ? "justify-end" : "justify-start"}`}>
         {!isMe && (
           <Avatar className="h-8 w-8 mb-1 shrink-0">
@@ -368,7 +359,6 @@ export function MessageBubble({
               </p>
             ) : (
               <>
-                {/* msg.image — ক্লিক করলে লাইটবক্স খোলে */}
                 {msg.image && !msg.fileUrl && (
                   <div
                     className="relative w-full aspect-[4/3] max-h-64 mb-1 rounded-md overflow-hidden bg-muted/20 cursor-pointer"
@@ -391,7 +381,6 @@ export function MessageBubble({
                 {msg.fileUrl && (
                   <div className="mt-1">
                     {msg.fileType?.startsWith("image/") || (msg.image && msg.fileUrl) ? (
-                      // fileUrl image — ক্লিক করলে লাইটবক্স খোলে
                       <div
                         className="relative w-full max-w-[240px] aspect-[4/3] rounded-lg overflow-hidden cursor-pointer"
                         onClick={(e) => {
@@ -409,7 +398,6 @@ export function MessageBubble({
                         />
                       </div>
                     ) : (
-                      // 🌟 ফিক্স: <a> এর বদলে next/link এর Link কম্পোনেন্ট।
                       <Link
                         href={msg.fileUrl}
                         target="_blank"
@@ -456,6 +444,31 @@ export function MessageBubble({
               )}
             </div>
           </div>
+
+          {/* 🌟 Seen by Popover for Group Chat */}
+          {isMe && isGroup && msg.reads && msg.reads.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <div className="text-[9px] text-muted-foreground self-end mt-0.5 cursor-pointer hover:underline">
+                  Seen by {msg.reads.length}
+                </div>
+              </PopoverTrigger>
+              <PopoverContent className="w-56 p-2 z-[60]" align="end">
+                <h4 className="text-xs font-semibold text-muted-foreground mb-2 pb-1 border-b">Seen by</h4>
+                <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                  {msg.reads.map((r: any) => (
+                    <div key={r.id || r.userId} className="flex items-center gap-2">
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={r.user?.image} />
+                        <AvatarFallback>{r.user?.name?.[0] || "U"}</AvatarFallback>
+                      </Avatar>
+                      <span className="text-xs font-medium truncate">{r.user?.name || "Unknown"}</span>
+                    </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
 
           {isFailed && onRetry && (
             <button
@@ -514,7 +527,6 @@ export function MessageBubble({
           className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
           onClick={() => setPreviewSrc(null)}
           onTouchEnd={(e) => {
-            // মোবাইলে ব্যাকগ্রাউন্ডে ট্যাপ করলে যেন লাইটবক্স বন্ধ হয়
             if (e.target === e.currentTarget) {
               setPreviewSrc(null);
             }
