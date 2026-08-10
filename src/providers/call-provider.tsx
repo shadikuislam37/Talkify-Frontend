@@ -2,8 +2,8 @@
 
 import { useEffect } from "react";
 import { socket } from "@/lib/socket";
-import { VideoCallModal } from "@/components/video-call-modal";
 import { authClient } from "@/lib/auth-client";
+import { VideoCallModal } from "@/components/chat/video-call-modal";
 
 /**
  * 🌟 কল পুরো অ্যাপ জুড়ে ধরার জন্য wrapper।

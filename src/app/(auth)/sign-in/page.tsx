@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, ShieldCheck, ArrowLeft, RefreshCw, Eye, EyeOff } from "lucide-react";
 import { useAuthStore } from "@/store/use-auth-store";
+import { getVisitorId } from "@/lib/fingerprint";
 
 // 🌟 Reusable Field Error Component
 const FieldError = ({ errors }: { errors: unknown[] }) => {
@@ -52,9 +53,16 @@ export default function SignInPage() {
     onSubmit: async ({ value }) => {
       setErrorMsg("");
       try {
+        const visitorId = await getVisitorId();
+
         const { data, error } = await signIn.email({
           email: value.email,
           password: value.password,
+          fetchOptions: {
+            body: {
+              visitorId, // 🌟 ব্যাকএন্ডে ভিজিটর আইডি পাঠিয়ে দেওয়া হলো
+            },
+          },
         });
 
         if (error) {

@@ -11,28 +11,41 @@ export default function ActiveDevicesModal() {
   const [loading, setLoading] = useState(true);
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
-  // 🌟 ১. লগইন হিস্ট্রি ফেচ করার ফাংশন
-  const fetchSessions = async () => {
-    try {
-      const response = await api.get("/users/login-history");
-      setSessions(response.data.data || response.data);
-    } catch (error) {
-      console.error("Failed to fetch login history", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // ১. লগইন হিস্ট্রি ফেচ করার একক useEffect (ডাবল রেন্ডার বা ডাবল কল ফিক্সড)
   useEffect(() => {
-    fetchSessions();
+    let isMounted = true;
+
+    const loadSessions = async () => {
+      try {
+        const response: any = await api.get("/users/login-history");
+        if (isMounted) {
+          setSessions(response.data || response);
+        }
+      } catch (error) {
+        console.error("Failed to fetch login history", error);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadSessions();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // 🌟 ২. নির্দিষ্ট ডিভাইস বা সেশন রিমোটলি লগআউট করার ফাংশন
+  // ২. নির্দিষ্ট ডিভাইস বা সেশন রিমোটলি লগআউট (ডিলিট) করার ফাংশন
   const handleRevokeSession = async (sessionId: string) => {
     setRevokingId(sessionId);
     try {
+      // ব্যাকএন্ডে সেশন ডিলিট করার রিকোয়েস্ট
       await api.delete(`/users/sessions/${sessionId}`);
-      setSessions(sessions.filter((s) => s.id !== sessionId));
+      
+      // লোকাল স্টেট থেকে ইনস্ট্যান্ট ফিল্টার করে বাদ দেওয়া, যাতে UI সাথে সাথে আপডেট হয়
+      setSessions((prevSessions) => prevSessions.filter((s) => s.id !== sessionId));
     } catch (error) {
       console.error("Failed to revoke session", error);
     } finally {
@@ -40,33 +53,71 @@ export default function ActiveDevicesModal() {
     }
   };
 
-  // রিয়েল ডিভাইস পার্স করার হেল্পার
+  // ৩. ফেসবুক বা জিমেইলের স্টাইলে নিখুঁত রিয়েল ডিভাইস পার্স করার ফাংশন
   const parseDeviceDetails = (deviceString: string = "") => {
     const parser = new UAParser(deviceString);
     const result = parser.getResult();
 
     const browserName = result.browser.name 
-      ? `${result.browser.name} ${result.browser.version ? `(${result.browser.version.split('.')[0]})` : ''}` 
+      ? `${result.browser.name}` 
       : "Unknown Browser";
+
+    let osName = result.os.name || "";
+    const osVersion = result.os.version || "";
+
+    // উইন্ডোজ ১১ ডিটেকশন হ্যান্ডলিং
+    if (osName === "Windows") {
+      if (osVersion === "10" || osVersion === "10.0") {
+        osName = "Windows 11";
+      } else {
+        osName = `Windows ${osVersion}`;
+      }
+    }
 
     const vendor = result.device.vendor || "";
     const model = result.device.model || "";
-    const osName = result.os.name || "";
-    const osVersion = result.os.version || "";
+    const deviceType = result.device.type;
 
-    let deviceName = "";
+    let deviceFormatted = "";
+
+    // কাস্টম হ্যান্ডলিং: ইউজার-এজেন্ট স্ট্রিং থেকে ব্র্যান্ড বা মডেল সরাসরি খুঁজে বের করা যদি ইউএ-পার্সার মিস করে
+    const lowerUA = deviceString.toLowerCase();
+
     if (model) {
-      deviceName = vendor && !model.toLowerCase().includes(vendor.toLowerCase()) 
-        ? `${vendor} ${model}` 
+      deviceFormatted = vendor && !model.toLowerCase().includes(vendor.toLowerCase())
+        ? `${vendor} ${model}`
         : model;
-    } else if (result.device.type) {
-      deviceName = `${result.device.type.charAt(0).toUpperCase() + result.device.type.slice(1)}`;
     } else {
-      deviceName = osName ? `${osName} ${osVersion}` : "Desktop PC";
+      // যদি ua-parser মডেল ধরতে না পারে, তবে র-স্ট্রিং চেক করে রিয়েল ডিভাইস ফাইন্ডআউট করা
+      if (lowerUA.includes("redmi")) {
+        deviceFormatted = "Redmi Device";
+      } else if (lowerUA.includes("xiaomi") || lowerUA.includes("mi ")) {
+        deviceFormatted = "Xiaomi Device";
+      } else if (lowerUA.includes("samsung") || lowerUA.includes("sm-")) {
+        deviceFormatted = "Samsung Device";
+      } else if (lowerUA.includes("iphone")) {
+        deviceFormatted = "iPhone";
+      } else if (lowerUA.includes("ipad")) {
+        deviceFormatted = "iPad";
+      } else if (deviceType === "mobile" || deviceType === "tablet") {
+        deviceFormatted = `${osName || "Mobile"} Device`;
+      } else {
+        const isMobileUA = /mobile|android|iphone|ipad|phone/i.test(deviceString);
+        if (isMobileUA && !osName.toLowerCase().includes("windows")) {
+          deviceFormatted = "Mobile Device";
+        } else {
+          deviceFormatted = osName ? `${osName}` : "PC / Laptop";
+        }
+      }
+    }
+
+    // যদি মডেলে অলরেডি ভেন্ডর না থাকে এবং ব্রাউজার স্ট্রিংয়ে ব্র্যান্ড থাকে তা সুন্দর করা
+    if (vendor && model && !model.toLowerCase().includes(vendor.toLowerCase())) {
+      deviceFormatted = `${vendor} ${model}`;
     }
 
     return {
-      deviceName: deviceName.trim() || "Unknown Device",
+      deviceName: deviceFormatted.trim() || "Unknown Device",
       browserName: browserName.trim(),
     };
   };

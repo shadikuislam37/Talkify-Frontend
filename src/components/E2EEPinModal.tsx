@@ -177,7 +177,7 @@ export default function E2EEPinModal({ currentUser, onKeysReset }: E2EEPinModalP
     try {
       await api.post("/auth/logout");
     } finally {
-      window.location.href = "/login";
+      window.location.href = "/sign-in";
     }
   };
 
