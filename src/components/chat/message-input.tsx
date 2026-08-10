@@ -46,7 +46,7 @@ export const MessageInput = ({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // 🌟 ভয়েস রেকর্ডিং এর জন্য নতুন লোকাল স্টেট (অরিজিনাল কোডের লাইন ঠিক রেখে যুক্ত করা হয়েছে)
+  // 🌟 ভয়েস রেকর্ডিং এর জন্য নতুন লোকাল স্টেট (অরিজিনাল কোডের লাইন ঠিক রেখে যুক্ত করা হয়েছে)
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
@@ -103,7 +103,7 @@ export const MessageInput = ({
     },
   });
 
-  // 🌟 ভয়েস নোট রেকর্ডিং শুরু করার ফাংশন
+  // 🌟 ভয়েস নোট রেকর্ডিং শুরু করার ফাংশন
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -156,20 +156,19 @@ export const MessageInput = ({
     try {
       setIsUploadingAudio(true);
       const formData = new FormData();
-      formData.append("file", audioBlob, `voice-note-${Date.now()}.webm`);
-      formData.append("conversationId", conversationId);
-      formData.append("fileType", "audio/webm");
+      const file = new File([audioBlob], `voice-note-${Date.now()}.webm`, { type: "audio/webm" });
+      formData.append("files", file);
 
-      const response: any = await mediaApi.post("/messages/upload-audio", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const res: any = await mediaApi.post("/media/upload", formData);
 
-      if (response && response.fileUrl) {
+      const fileUrl = res.data?.data?.[0]?.fileUrl || res.fileUrl || res.url;
+
+      if (fileUrl) {
         const payload = {
           conversationId,
-          fileUrl: response.fileUrl,
-          fileType: response.fileType || "audio/webm",
-          fileName: response.fileName || "Voice Note",
+          fileUrl: fileUrl,
+          fileType: "audio/webm",
+          fileName: `Voice Note - ${new Date().toLocaleTimeString()}`,
           replyToId: replyingTo?.id || undefined,
         };
         await onSendMessage(payload);
@@ -294,7 +293,7 @@ export const MessageInput = ({
         <div className="shrink-0 pb-1 flex items-center gap-1">
           <MediaUploadButton onUploadComplete={handleUploadComplete} />
 
-          {/* 🌟 ভয়েস রেকর্ডার বাটন ও ইউআই */}
+          {/* 🌟 ভয়েস রেকর্ডার বাটন ও ইউআই */}
           {isUploadingAudio ? (
             <span className="text-xs text-muted-foreground px-2 animate-pulse">Sending...</span>
           ) : isRecording ? (

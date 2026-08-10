@@ -1,22 +1,22 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { Mic, Send, Trash2, Square } from "lucide-react";
-import { mediaApi } from "@/lib/api";
+import { Mic, Send, Trash2 } from "lucide-react";
+import { useUploadMedia } from "@/hooks/use-media-upload";
 
 interface AudioRecorderProps {
-  conversationId: string;
-  onAudioSent: (messageData: any) => void;
+  onAudioSent: (fileUrl: string) => void;
 }
 
-export function AudioRecorder({ conversationId, onAudioSent }: AudioRecorderProps) {
+export function AudioRecorder({ onAudioSent }: AudioRecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
-  
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const { mutateAsync: uploadMedia, isPending: isUploading } = useUploadMedia();
 
   const startRecording = async () => {
     try {
@@ -34,7 +34,18 @@ export function AudioRecorder({ conversationId, onAudioSent }: AudioRecorderProp
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         stream.getTracks().forEach((track) => track.stop());
-        await uploadAndSendAudio(audioBlob);
+        
+        // Blob থেকে File অবজেক্ট বানিয়ে আপলোড হুকে পাঠিয়ে দেওয়া
+        const file = new File([audioBlob], `voice-note-${Date.now()}.webm`, { type: "audio/webm" });
+        
+        try {
+          const fileUrl = await uploadMedia(file);
+          if (fileUrl) {
+            onAudioSent(fileUrl);
+          }
+        } catch (error) {
+          console.error("Failed to upload voice note:", error);
+        }
       };
 
       mediaRecorder.start();
@@ -45,7 +56,7 @@ export function AudioRecorder({ conversationId, onAudioSent }: AudioRecorderProp
         setRecordingTime((prev) => prev + 1);
       }, 1000);
     } catch (error) {
-      console.error("Microphone permission denied or error:", error);
+      console.error("Microphone permission denied:", error);
     }
   };
 
@@ -59,35 +70,10 @@ export function AudioRecorder({ conversationId, onAudioSent }: AudioRecorderProp
 
   const cancelRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.onstop = null; // যাতে আপলোড না হয়ে বাতিল হয়
+      mediaRecorderRef.current.onstop = null; // যাতে আপলোড না হয়ে টাস্ক ক্যানসেল হয়
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);
-    }
-  };
-
-  const uploadAndSendAudio = async (audioBlob: Blob) => {
-    try {
-      setIsUploading(true);
-      const formData = new FormData();
-      formData.append("file", audioBlob, `voice-note-${Date.now()}.webm`);
-      formData.append("conversationId", conversationId);
-      formData.append("fileType", "audio/webm");
-
-      const response: any = await mediaApi.post("/messages/upload-audio", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
-
-      // সফলভাবে আপলোড হলে প্যারেন্ট কম্পোনেন্টে পাঠিয়ে দেওয়া
-      if (response) {
-        onAudioSent(response);
-      }
-    } catch (error) {
-      console.error("Failed to upload audio note:", error);
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -98,20 +84,20 @@ export function AudioRecorder({ conversationId, onAudioSent }: AudioRecorderProp
   };
 
   if (isUploading) {
-    return <span className="text-xs text-muted-foreground animate-pulse">Sending voice note...</span>;
+    return <span className="text-xs text-muted-foreground animate-pulse px-2">Sending voice note...</span>;
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1">
       {isRecording ? (
-        <div className="flex items-center gap-3 bg-red-500/10 text-red-500 px-3 py-1.5 rounded-full animate-pulse">
-          <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+        <div className="flex items-center gap-2 bg-red-500/10 text-red-500 px-3 py-1.5 rounded-full animate-pulse">
+          <span className="w-2 h-2 rounded-full bg-red-500"></span>
           <span className="text-xs font-semibold">{formatTime(recordingTime)}</span>
-          <button type="button" onClick={cancelRecording} className="p-1 hover:bg-red-500/20 rounded-full" title="Cancel">
-            <Trash2 className="h-4 w-4" />
+          <button type="button" onClick={cancelRecording} className="p-1 hover:bg-red-500/20 rounded-full cursor-pointer" title="Cancel">
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
-          <button type="button" onClick={stopRecording} className="p-1 bg-red-500 text-white rounded-full" title="Send">
-            <Send className="h-3.5 w-3.5" />
+          <button type="button" onClick={stopRecording} className="p-1 bg-red-500 text-white rounded-full cursor-pointer" title="Send">
+            <Send className="h-3 w-3" />
           </button>
         </div>
       ) : (
