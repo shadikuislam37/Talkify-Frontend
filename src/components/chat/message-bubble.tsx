@@ -217,7 +217,7 @@ export function MessageBubble({
 
                 {showReactionPicker && (
                   <div
-                    className={`absolute bottom-full mb-1 z-50 flex items-center gap-1.5 p-1.5 rounded-full shadow-lg bg-background border max-w-[90vw] overflow-x-auto ${
+                    className={`absolute bottom-full mb-1 z-50 flex items-center gap-1.5 p-1.5 rounded-full shadow-lg bg-background border max-w-[85vw] overflow-x-auto ${
                       isMe ? "right-0" : "left-0"
                     }`}
                   >
@@ -337,7 +337,7 @@ export function MessageBubble({
                 : "bg-muted/50 rounded-bl-none self-start"
             } ${!isDeleted ? "cursor-pointer select-none" : ""}  ${isFailed ? "ring-1 ring-red-400" : ""}`}
           >
-            {/* বাবলের ভেতরের রিপ্লাই প্রিভিউ বক্স (ফিক্সড) */}
+            {/* বাবলের ভেতরের রিপ্লাই প্রিভিউ বক্স */}
             {!isDeleted && msg.replyTo && (
               <div
                 onClick={(e) => {
@@ -368,6 +368,7 @@ export function MessageBubble({
               </p>
             ) : (
               <>
+                {/* msg.image — ক্লিক করলে লাইটবক্স খোলে */}
                 {msg.image && !msg.fileUrl && (
                   <div
                     className="relative w-full aspect-[4/3] max-h-64 mb-1 rounded-md overflow-hidden bg-muted/20 cursor-pointer"
@@ -390,6 +391,7 @@ export function MessageBubble({
                 {msg.fileUrl && (
                   <div className="mt-1">
                     {msg.fileType?.startsWith("image/") || (msg.image && msg.fileUrl) ? (
+                      // fileUrl image — ক্লিক করলে লাইটবক্স খোলে
                       <div
                         className="relative w-full max-w-[240px] aspect-[4/3] rounded-lg overflow-hidden cursor-pointer"
                         onClick={(e) => {
@@ -407,6 +409,7 @@ export function MessageBubble({
                         />
                       </div>
                     ) : (
+                      // 🌟 ফিক্স: <a> এর বদলে next/link এর Link কম্পোনেন্ট।
                       <Link
                         href={msg.fileUrl}
                         target="_blank"
@@ -505,12 +508,13 @@ export function MessageBubble({
         </div>
       </div>
 
-      {/* ইমেজ লাইটবক্স */}
+      {/* ইমেজ লাইটবক্স — attachment-এ ক্লিক করলে ফুল-স্ক্রিন প্রিভিউ খোলে */}
       {previewSrc && (
         <div
           className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
           onClick={() => setPreviewSrc(null)}
           onTouchEnd={(e) => {
+            // মোবাইলে ব্যাকগ্রাউন্ডে ট্যাপ করলে যেন লাইটবক্স বন্ধ হয়
             if (e.target === e.currentTarget) {
               setPreviewSrc(null);
             }
