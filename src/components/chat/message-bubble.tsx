@@ -129,7 +129,7 @@ export function MessageBubble({
   const isReadByOther = React.useMemo(() => {
     if (!isMe) return false;
 
-    // ১. মেসেজের নিজস্ব স্ট্যাটাস যদি READ হয়
+    // ১. মেসেজের নিজস্ব স্ট্যাটাস যদি READ হয়
     if (msg.status === "READ" || msg.status === "DELIVERED") {
       // আপনি যদি ডেলিভারড হলেও টিক দিতে চান বা শুধু রিড হলে:
       if (msg.status === "READ") return true;
@@ -144,9 +144,9 @@ export function MessageBubble({
       if (hasOtherRead) return true;
     }
 
-    // ৩. 🌟 ফুল-প্রুফ ফিক্স: যদি কনভার্সেশনের অন্য কোনো ইউজার চ্যাটে থাকে বা মেসেজ টাইম স্ট্যাম্প অনুযায়ী পড়া হয়ে থাকে, 
-    // অথবা আপনার যদি এমন কোনো প্রপার্টি থাকে যা দিয়ে বোঝা যায় অপরপক্ষ অ্যাক্টিভ বা সিন করেছে
-    // ব্যাকএন্ড থেকে সকেট ইভেন্টে যদি মেসেজ লিস্ট রিফেচ (queryClient.invalidateQueries) না হয়, 
+    // ৩. 🌟 ফুল-প্রুফ ফিক্স: যদি কনভার্সেশনের অন্য কোনো ইউজার চ্যাটে থাকে বা মেসেজ টাইম স্ট্যাম্প অনুযায়ী পড়া হয়ে থাকে, 
+    // অথবা আপনার যদি এমন কোনো প্রপার্টি থাকে যা দিয়ে বোঝা যায় অপরপক্ষ অ্যাক্টিভ বা সিন করেছে
+    // ব্যাকএন্ড থেকে সকেট ইভেন্টে যদি মেসেজ লিস্ট রিফেচ (queryClient.invalidateQueries) না হয়, 
     // তবে এটি কাজ করবে না। তাই সকেট লিসেনারে ক্যাশ আপডেট নিশ্চিত করতে হবে।
 
     return false;
@@ -337,7 +337,7 @@ export function MessageBubble({
                 : "bg-muted/50 rounded-bl-none self-start"
             } ${!isDeleted ? "cursor-pointer select-none" : ""}  ${isFailed ? "ring-1 ring-red-400" : ""}`}
           >
-            {/* বাবলের ভেতরের রিপ্লাই প্রিভিউ বক্স */}
+            {/* বাবলের ভেতরের রিপ্লাই প্রিভিউ বক্স (ফিক্সড) */}
             {!isDeleted && msg.replyTo && (
               <div
                 onClick={(e) => {
@@ -345,15 +345,20 @@ export function MessageBubble({
                   const targetId = msg.replyToId || msg.replyTo?.id;
                   if (targetId && onScrollToReply) onScrollToReply(targetId);
                 }}
-                className={`cursor-pointer text-xs p-2 rounded-xl mb-1.5 border truncate ${
+                className={`cursor-pointer text-xs p-2 rounded-xl mb-1.5 border min-w-0 w-full overflow-hidden ${
                   isMe
                     ? "bg-black/20 border-white/20 text-white"
                     : "bg-muted/60 border-border/60 text-foreground"
                 }`}
               >
-                <p className="truncate text-[11px] font-medium">
-                  {replyDisplayBody || (msg.replyTo.body?.trim().startsWith("{") ? "Encrypted message" : msg.replyTo.body) || "Attachment"}
-                </p>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[10px] font-bold opacity-70 truncate">
+                    {msg.replyTo.sender?.name || "User"}
+                  </span>
+                  <p className="text-[11px] font-medium line-clamp-2 break-all">
+                    {replyDisplayBody || (msg.replyTo.body?.trim().startsWith("{") ? "Encrypted message" : msg.replyTo.body) || "Attachment"}
+                  </p>
+                </div>
               </div>
             )}
 
@@ -363,7 +368,6 @@ export function MessageBubble({
               </p>
             ) : (
               <>
-                {/* msg.image — ক্লিক করলে লাইটবক্স খোলে */}
                 {msg.image && !msg.fileUrl && (
                   <div
                     className="relative w-full aspect-[4/3] max-h-64 mb-1 rounded-md overflow-hidden bg-muted/20 cursor-pointer"
@@ -386,7 +390,6 @@ export function MessageBubble({
                 {msg.fileUrl && (
                   <div className="mt-1">
                     {msg.fileType?.startsWith("image/") || (msg.image && msg.fileUrl) ? (
-                      // fileUrl image — ক্লিক করলে লাইটবক্স খোলে
                       <div
                         className="relative w-full max-w-[240px] aspect-[4/3] rounded-lg overflow-hidden cursor-pointer"
                         onClick={(e) => {
@@ -404,10 +407,6 @@ export function MessageBubble({
                         />
                       </div>
                     ) : (
-                      // 🌟 ফিক্স: <a> এর বদলে next/link এর Link কম্পোনেন্ট।
-                      // prefetch={false} দেওয়া হলো কারণ এটা কোনো internal app route না,
-                      // বরং external/dynamic file URL — prefetch করার দরকার নেই এবং
-                      // অপ্রয়োজনীয় console warning এড়াতে এটা বন্ধ রাখা ভালো প্র্যাক্টিস।
                       <Link
                         href={msg.fileUrl}
                         target="_blank"
@@ -441,17 +440,17 @@ export function MessageBubble({
 
               <span>{formatTime(msg.createdAt)}</span>
 
-   {isMe && (
-  <span className="ml-0.5">
-    {isFailed ? (
-      <AlertCircle className="h-3.5 w-3.5 text-red-400" />
-    ) : isReadByOther ? (
-      <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold" />
-    ) : (
-      <Check className="h-3.5 w-3.5 opacity-70" />
-    )}
-  </span>
-)}
+              {isMe && (
+                <span className="ml-0.5">
+                  {isFailed ? (
+                    <AlertCircle className="h-3.5 w-3.5 text-red-400" />
+                  ) : isReadByOther ? (
+                    <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5 opacity-70" />
+                  )}
+                </span>
+              )}
             </div>
           </div>
 
@@ -506,13 +505,12 @@ export function MessageBubble({
         </div>
       </div>
 
-   {/* ইমেজ লাইটবক্স — attachment-এ ক্লিক করলে ফুল-স্ক্রিন প্রিভিউ খোলে */}
+      {/* ইমেজ লাইটবক্স */}
       {previewSrc && (
         <div
           className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
           onClick={() => setPreviewSrc(null)}
           onTouchEnd={(e) => {
-            // মোবাইলে ব্যাকগ্রাউন্ডে ট্যাপ করলে যেন লাইটবক্স বন্ধ হয়
             if (e.target === e.currentTarget) {
               setPreviewSrc(null);
             }
