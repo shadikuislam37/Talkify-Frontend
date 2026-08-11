@@ -1,12 +1,12 @@
 import { api, unwrap } from '@/lib/api';
 import { useChatStore } from '@/store/use-chat-store';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 export const useMessageRequests = () => {
   const queryClient = useQueryClient();
   const { setPendingMessageRequests, removeMessageRequest } = useChatStore();
 
-  // ১. পেন্ডিং মেসেজ রিকোয়েস্টগুলো ফেচ করা
   const { 
     data: pendingRequests = [], 
     isLoading: isRequestsLoading, 
@@ -15,7 +15,7 @@ export const useMessageRequests = () => {
     queryKey: ['pending-message-requests'],
     queryFn: async () => {
       const response = await api.get('/users/friend-request/pending');
-      const data = unwrap<any[]>(response); // unwrap হেল্পার দিয়ে সরাসরি ডাটা এক্সট্রাক্ট করা হলো
+      const data = unwrap<any[]>(response);
       
       setPendingMessageRequests(data || []);
       return data || [];
@@ -24,34 +24,41 @@ export const useMessageRequests = () => {
     refetchOnWindowFocus: false,
   });
 
-  // ২. মেসেজ রিকোয়েস্ট এক্সেপ্ট বা রিজেক্ট করার মিউটেশন
   const handleRequestMutation = useMutation({
-    mutationFn: async ({ requestId, status }: { requestId: string; status: 'ACCEPTED' | 'REJECTED' }) => {
+    // senderName রিসিভ করছি যাতে Toast এ নাম দেখানো যায়
+    mutationFn: async ({ requestId, status, senderName }: { requestId: string; status: 'ACCEPTED' | 'REJECTED'; senderName: string }) => {
       const response = await api.post('/users/friend-request/handle', {
         requestId,
         status,
       });
-      return { response, requestId, status };
+      return { response, requestId, status, senderName };
     },
     onMutate: async ({ requestId }) => {
-      // অপ্টিমিস্টিক আপডেট (UI থেকে ইনস্ট্যান্ট রিমুভ)
+      // 🌟 অপ্টিমিস্টিক আপডেট: বাটনে ক্লিক করার সাথে সাথেই UI থেকে রিকোয়েস্ট গায়েব হয়ে যাবে
       removeMessageRequest(requestId);
     },
     onSuccess: (data) => {
-      // সফল হলে ক্যাশ রিফেচ করা
       queryClient.invalidateQueries({ queryKey: ['pending-message-requests'] });
       
       if (data.status === 'ACCEPTED') {
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        toast.success("Request Accepted! 🎉", {
+          description: `You can now chat with ${data.senderName}.`,
+          duration: 3000,
+        });
+      } else {
+        toast("Request Deleted 🗑️", {
+          description: `You removed ${data.senderName}'s request.`,
+          duration: 3000,
+        });
       }
     },
     onError: () => {
-      // এরর হলে কুয়েরি রিফেচ করে ব্যাকআপ রিস্টোর করা
+      toast.error("Oops! Something went wrong 😥");
       queryClient.invalidateQueries({ queryKey: ['pending-message-requests'] });
     },
   });
 
-  // ৩. নতুন মেসেজ রিকোয়েস্ট পাঠানোর মিউটেশন
   const sendRequestMutation = useMutation({
     mutationFn: async (receiverId: string) => {
       const response = await api.post('/users/friend-request/send', {

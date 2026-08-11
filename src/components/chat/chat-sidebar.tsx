@@ -8,8 +8,8 @@ import { Users, MoreVertical, Bell, BellOff, Trash2, UserPlus } from "lucide-rea
 import { socket } from "@/lib/socket";
 import { decryptMessage } from "@/lib/crypto";
 import { api } from "@/lib/api";
-import { useMessageRequests } from "@/hooks/useMessageRequests"; // 🌟 হুক ইম্পোর্ট করা হলো
-import { MessageRequestsTab } from "@/components/MessageRequestsTab"; // 🌟 কম্পোনেন্ট ইম্পোর্ট করা হলো
+import { useMessageRequests } from "@/hooks/useMessageRequests"; 
+import { MessageRequestsTab } from "@/components/MessageRequestsTab";
 
 interface ChatSidebarProps {
   conversations: Conversation[];
@@ -35,9 +35,8 @@ export default function ChatSidebar({
   const [decryptedPreviews, setDecryptedPreviews] = useState<Record<string, string>>({});
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  // 🌟 নতুন স্টেট: সাইডবারে ট্যাব স্যুইচ করার জন্য ("chats" | "requests")
   const [activeTab, setActiveTab] = useState<"chats" | "requests">("chats");
-  const { pendingRequests } = useMessageRequests(); // পেন্ডিং রিকোয়েস্ট লিস্ট ও কাউন্টের জন্য
+  const { pendingRequests } = useMessageRequests(); 
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -117,7 +116,6 @@ export default function ChatSidebar({
 
   return (
     <div className="w-full h-full flex flex-col bg-background">
-      {/* 🌟 নতুন যোগ করা ট্যাব হেডার (Chats এবং Message Requests স্যুইচ করার জন্য) */}
       <div className="flex border-b border-border p-2 gap-2 shrink-0">
         <button
           onClick={() => setActiveTab("chats")}
@@ -148,7 +146,6 @@ export default function ChatSidebar({
         </button>
       </div>
 
-      {/* 🌟 কন্ডিশনাল রেন্ডারিং: ট্যাব অনুযায়ী চ্যাট লিস্ট অথবা মেসেজ রিকোয়েস্ট লিস্ট দেখাবে */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {activeTab === "requests" ? (
           <MessageRequestsTab />
@@ -276,7 +273,6 @@ export default function ChatSidebar({
                   </div>
                 </div>
 
-                {/* 🌟 রেসপন্সিভ থ্রি-ডট মেনু (মোবাইলে সবসময় দেখাবে, ল্যাপটপে হোভারে দেখাবে) */}
                 <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => setOpenMenuId(isMenuOpen ? null : conv.id)}

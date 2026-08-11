@@ -1,6 +1,6 @@
 import React from "react";
-import { useMessageRequests } from "@/hooks/useMessageRequests"; // আপনার তৈরি করা হুক
-import { Button } from "@/components/ui/button"; // Shadcn UI
+import { useMessageRequests } from "@/hooks/useMessageRequests";
+import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Check, X, Loader2 } from "lucide-react";
 
@@ -36,7 +36,6 @@ export const MessageRequestsTab = () => {
             key={req.id}
             className="flex items-center justify-between p-3 rounded-lg bg-card hover:bg-accent/50 transition-colors border border-border/50"
           >
-            {/* Sender Info */}
             <div className="flex items-center gap-3">
               <Avatar className="w-10 h-10">
                 <AvatarImage src={sender?.image} alt={sender?.name} />
@@ -52,13 +51,16 @@ export const MessageRequestsTab = () => {
               </div>
             </div>
 
-            {/* Action Buttons (Accept & Reject) */}
             <div className="flex items-center gap-1.5">
               <Button
                 size="icon"
                 variant="default"
                 className="w-8 h-8 rounded-full bg-primary hover:bg-primary/90"
-                onClick={() => handleRequest({ requestId: req.id, status: "ACCEPTED" })}
+                onClick={() => handleRequest({ 
+                  requestId: req.id, 
+                  status: "ACCEPTED", 
+                  senderName: sender?.name || "User" // 🌟 নাম পাঠানো হচ্ছে
+                })}
                 disabled={isHandling}
                 title="Accept"
               >
@@ -69,7 +71,11 @@ export const MessageRequestsTab = () => {
                 size="icon"
                 variant="outline"
                 className="w-8 h-8 rounded-full hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
-                onClick={() => handleRequest({ requestId: req.id, status: "REJECTED" })}
+                onClick={() => handleRequest({ 
+                  requestId: req.id, 
+                  status: "REJECTED", 
+                  senderName: sender?.name || "User" // 🌟 নাম পাঠানো হচ্ছে
+                })}
                 disabled={isHandling}
                 title="Delete"
               >
