@@ -21,7 +21,27 @@ export function AudioRecorder({ onAudioSent }: AudioRecorderProps) {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+
+      // 🌟 আইপ্যাড/সাফারি এবং অন্যান্য ডিভাইসের জন্য স্মার্ট ফরম্যাট ডিটেকশন
+      const possibleTypes = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4",
+        "audio/aac",
+      ];
+
+      let selectedMimeType = "";
+      for (const type of possibleTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          selectedMimeType = type;
+          break;
+        }
+      }
+
+      // যদি ব্রাউজার কোনো নির্দিষ্ট টাইপ সাপোর্ট না করে, তবে ব্রাউজারের ডিফল্ট নেওয়ার জন্য ব্ল্যাংক রাখা বা ఆપ્শন পাস না করা
+      const options = selectedMimeType ? { mimeType: selectedMimeType } : undefined;
+      
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -32,11 +52,17 @@ export function AudioRecorder({ onAudioSent }: AudioRecorderProps) {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        // রেকর্ড শেষ হলে রিয়েল মাইন টাইপ বা ফলব্যাক অনুযায়ী এক্সটেনশন নির্ধারণ
+        const actualMimeType = mediaRecorder.mimeType || selectedMimeType || "audio/webm";
+        const isMp4 = actualMimeType.includes("mp4") || actualMimeType.includes("aac");
+        const fileExtension = isMp4 ? "m4a" : "webm";
+        const finalMimeType = isMp4 ? "audio/mp4" : "audio/webm";
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: finalMimeType });
         stream.getTracks().forEach((track) => track.stop());
         
-        // Blob থেকে File অবজেক্ট বানিয়ে আপলোড হুকে পাঠিয়ে দেওয়া
-        const file = new File([audioBlob], `voice-note-${Date.now()}.webm`, { type: "audio/webm" });
+        // সঠিক ফরম্যাট ও এক্সটেনশন সহ ফাইল তৈরি
+        const file = new File([audioBlob], `voice-note-${Date.now()}.${fileExtension}`, { type: finalMimeType });
         
         try {
           const fileUrl = await uploadMedia(file);
@@ -56,7 +82,7 @@ export function AudioRecorder({ onAudioSent }: AudioRecorderProps) {
         setRecordingTime((prev) => prev + 1);
       }, 1000);
     } catch (error) {
-      console.error("Microphone permission denied:", error);
+      console.error("Microphone permission denied or not supported:", error);
     }
   };
 
@@ -70,7 +96,7 @@ export function AudioRecorder({ onAudioSent }: AudioRecorderProps) {
 
   const cancelRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.onstop = null; // যাতে আপলোড না হয়ে টাস্ক ক্যানসেল হয়
+      mediaRecorderRef.current.onstop = null; // যাতে আপলোড না হয়ে ক্যানসেল হয়
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);
@@ -97,7 +123,7 @@ export function AudioRecorder({ onAudioSent }: AudioRecorderProps) {
             <Trash2 className="h-3.5 w-3.5" />
           </button>
           <button type="button" onClick={stopRecording} className="p-1 bg-red-500 text-white rounded-full cursor-pointer" title="Send">
-            <Send className="h-3 w-3" />
+            <Send className="h-3.5 w-3.5" />
           </button>
         </div>
       ) : (
