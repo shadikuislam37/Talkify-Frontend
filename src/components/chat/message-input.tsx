@@ -3,16 +3,15 @@
 import React, { useState, useRef } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Button } from "@/components/ui/button";
-import { Send, X, FileText, Smile, Mic, Trash2 } from "lucide-react";
+import { Send, X, FileText, Smile } from "lucide-react";
 import { sendMessageSchema } from "@/schemas/chat.schema";
 import Image from "next/image";
 import { Message } from "@/types";
 import MediaUploadButton from "./MediaUploadButton";
-import { mediaApi } from "@/lib/api";
 
 // 🌟 ইমোজি মার্ট ইম্পোর্ট
-import Picker from "@emoji-mart/react";
-import data from "@emoji-mart/data";
+import EmojiPicker, { Theme } from "emoji-picker-react";
+import { AudioRecorder } from "../AudioRecorder";
 
 interface MessageInputProps {
   conversationId: string;
@@ -45,15 +44,6 @@ export const MessageInput = ({
 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // 🌟 ভয়েস রেকর্ডিং এর জন্য নতুন লোকাল স্টেট (অরিজিনাল কোডের লাইন ঠিক রেখে যুক্ত করা হয়েছে)
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const form = useForm({
     defaultValues: {
@@ -103,90 +93,6 @@ export const MessageInput = ({
     },
   });
 
-  // 🌟 ভয়েস নোট রেকর্ডিং শুরু করার ফাংশন
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        stream.getTracks().forEach((track) => track.stop());
-        await uploadAndSendAudio(audioBlob);
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-      setRecordingTime(0);
-
-      timerRef.current = setInterval(() => {
-        setRecordingTime((prev) => prev + 1);
-      }, 1000);
-    } catch (error) {
-      console.error("Microphone permission denied:", error);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-  };
-
-  const cancelRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.onstop = null;
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-  };
-
-  const uploadAndSendAudio = async (audioBlob: Blob) => {
-    try {
-      setIsUploadingAudio(true);
-      const formData = new FormData();
-      const file = new File([audioBlob], `voice-note-${Date.now()}.webm`, { type: "audio/webm" });
-      formData.append("files", file);
-
-      const res: any = await mediaApi.post("/media/upload", formData);
-
-      const fileUrl = res.data?.data?.[0]?.fileUrl || res.fileUrl || res.url;
-
-      if (fileUrl) {
-        const payload = {
-          conversationId,
-          fileUrl: fileUrl,
-          fileType: "audio/webm",
-          fileName: `Voice Note - ${new Date().toLocaleTimeString()}`,
-          replyToId: replyingTo?.id || undefined,
-        };
-        await onSendMessage(payload);
-        onCancelReply();
-      }
-    } catch (error) {
-      console.error("Failed to upload voice note:", error);
-    } finally {
-      setIsUploadingAudio(false);
-    }
-  };
-
-  const formatAudioTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
-  };
-
   const autoResize = (el: HTMLTextAreaElement) => {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
@@ -212,16 +118,16 @@ export const MessageInput = ({
   };
 
   // 🌟 ইমোজি সিলেক্ট করার হ্যান্ডলার
-  const handleEmojiSelect = (emoji: any, field: any) => {
-    const currentVal = field.state.value || "";
-    const newVal = currentVal + emoji.native;
-    field.handleChange(newVal);
-    onTyping(newVal);
-    if (textareaRef.current) {
-      textareaRef.current.focus();
-      autoResize(textareaRef.current);
-    }
-  };
+const handleEmojiSelect = (emojiData: any, field: any) => {
+  const currentVal = field.state.value || "";
+  const newVal = currentVal + emojiData.emoji; // emojiData.emoji ব্যবহার করতে হবে
+  field.handleChange(newVal);
+  onTyping(newVal);
+  if (textareaRef.current) {
+    textareaRef.current.focus();
+    autoResize(textareaRef.current);
+  }
+};
 
   return (
     <div className="flex flex-col border-t bg-background shrink-0 mt-auto relative">
@@ -293,30 +199,20 @@ export const MessageInput = ({
         <div className="shrink-0 pb-1 flex items-center gap-1">
           <MediaUploadButton onUploadComplete={handleUploadComplete} />
 
-          {/* 🌟 ভয়েস রেকর্ডার বাটন ও ইউআই */}
-          {isUploadingAudio ? (
-            <span className="text-xs text-muted-foreground px-2 animate-pulse">Sending...</span>
-          ) : isRecording ? (
-            <div className="flex items-center gap-2 bg-red-500/10 text-red-500 px-3 py-1.5 rounded-full animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-red-500"></span>
-              <span className="text-xs font-semibold">{formatAudioTime(recordingTime)}</span>
-              <button type="button" onClick={cancelRecording} className="p-1 hover:bg-red-500/20 rounded-full" title="Cancel">
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-              <button type="button" onClick={stopRecording} className="p-1 bg-red-500 text-white rounded-full" title="Send">
-                <Send className="h-3 w-3" />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={startRecording}
-              className="p-2 hover:bg-muted rounded-full text-muted-foreground transition-colors cursor-pointer"
-              title="Record voice note"
-            >
-              <Mic className="h-5 w-5" />
-            </button>
-          )}
+          {/* 🌟 আলাদা করা AudioRecorder কম্পোনেন্ট এখানে যুক্ত করা হলো */}
+          <AudioRecorder
+            onAudioSent={async (fileUrl) => {
+              const payload = {
+                conversationId,
+                fileUrl: fileUrl,
+                fileType: "audio/webm",
+                fileName: `Voice Note - ${new Date().toLocaleTimeString()}`,
+                replyToId: replyingTo?.id || undefined,
+              };
+              await onSendMessage(payload);
+              onCancelReply();
+            }}
+          />
         </div>
 
         <form.Field name="body">
@@ -359,11 +255,12 @@ export const MessageInput = ({
 
                 {showEmojiPicker && (
                   <div className="absolute bottom-full right-0 mb-2 z-50 shadow-2xl rounded-2xl overflow-hidden border bg-background">
-                    <Picker
-                      data={data}
-                      onEmojiSelect={(emoji: any) => handleEmojiSelect(emoji, field)}
-                      theme="light"
-                    />
+                  <EmojiPicker
+      onEmojiClick={(emojiData) => handleEmojiSelect(emojiData, field)}
+      theme={Theme.LIGHT} // বা আপনার প্রজেক্টের থিম অনুযায়ী
+      width={300}
+      height={350}
+    />
                   </div>
                 )}
               </div>
