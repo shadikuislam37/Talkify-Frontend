@@ -55,7 +55,8 @@ export const ChatLayout = ({
   const onlineUsers = useOnlineUsers();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  const { data: conversations = [], isLoading } = useGetConversations();
+  // 🌟 কনভার্সেশন লিস্ট ফেচ করার হুক থেকে refetch ফাংশনটি বের করে নেওয়া হলো
+  const { data: conversations = [], isLoading, refetch: refetchConversations } = useGetConversations();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
 
   const { setIncomingCall } = useCallStore();
@@ -75,14 +76,25 @@ export const ChatLayout = ({
     () => setIncomingCall(null)
   );
 
-  // 🌟 মাল্টি-ডিভাইস সিঙ্ক: একই অ্যাকাউন্ট একাধিক ডিভাইসে লগইন থাকলে গ্লোবাল রুম বা সেটাপ নিশ্চিত করা
+  // 🌟 মাল্টি-ডিভাইস সিঙ্ক ও নতুন মেসেজ আসলে সাইডবার কনভার্সেশন লিস্ট ইনস্ট্যান্ট রিফেচ করার লজিক
   useEffect(() => {
     if (!socket) return;
     if (!socket.connected) socket.connect();
     if (currentUserId) {
       socket.emit("setup", currentUserId);
     }
-  }, [socket, currentUserId]);
+
+    // নতুন কোনো মেসেজ রিসিভ হলেই ব্যাকগ্রাউন্ডে কনভার্সেশন লিস্ট আপডেট করে নেওয়া
+    const handleNewMessageSync = () => {
+      refetchConversations();
+    };
+
+    socket.on("receive_message", handleNewMessageSync);
+
+    return () => {
+      socket.off("receive_message", handleNewMessageSync);
+    };
+  }, [socket, currentUserId, refetchConversations]);
 
   const handleSelectConversation = async (id: string) => {
     setSelectedConversationId(id);
@@ -99,7 +111,7 @@ export const ChatLayout = ({
     }
 
     await queryClient.invalidateQueries({ queryKey: ["conversations"] });
-    await queryClient.refetchQueries({ queryKey: ["conversations"] });
+    await refetchConversations();
   };
 
   const handleLogout = async () => {
@@ -249,6 +261,7 @@ export const ChatLayout = ({
               currentUserId={currentUserId}
               onSelectConversation={handleSelectConversation}
               onlineUsers={onlineUsers}
+              onConversationUpdate={() => refetchConversations()}
             />
           )}
         </div>
