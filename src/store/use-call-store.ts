@@ -22,8 +22,20 @@ export const useCallStore = create<CallState>((set) => ({
     set({ incomingCall: call, isVideoCall: call?.isVideo ?? true }),
   startCall: (targetUser, isVideo) => 
     set({ isCalling: true, targetUser, isVideoCall: isVideo }),
-  acceptCall: () => 
-    set({ callActive: true, incomingCall: null }),
+  acceptCall: () =>
+    set((state) => ({
+      callActive: true,
+      incomingCall: null,
+      targetUser:
+        state.targetUser ??
+        (state.incomingCall
+          ? {
+              id: state.incomingCall.from,
+              name: state.incomingCall.name,
+              image: state.incomingCall.image,
+            }
+          : null),
+    })),
   endCall: () => 
     set({ isCalling: false, incomingCall: null, callActive: false, targetUser: null, isVideoCall: true }),
 }));
