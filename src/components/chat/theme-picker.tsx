@@ -8,12 +8,14 @@ export function ThemePicker({ conversationId }: { conversationId: string }) {
   const { mutate: updateTheme } = useUpdateChatTheme();
 
   // 🌟 সব নতুন থিম এবং এগুলোর প্রিভিউ কালার বা গ্রেডিয়েন্ট
-  const themes = [
+const themes = [
     { name: "Default", class: "theme-default", preview: "bg-white border-gray-300 dark:bg-zinc-800" },
     { name: "Ocean", class: "theme-ocean", preview: "bg-gradient-to-tr from-blue-600 to-cyan-400" },
     { name: "Sunset", class: "theme-sunset", preview: "bg-gradient-to-tr from-rose-600 to-orange-500" },
     { name: "Cyberpunk", class: "theme-cyberpunk", preview: "bg-gradient-to-tr from-purple-600 to-pink-500" },
     { name: "Emerald", class: "theme-emerald", preview: "bg-gradient-to-tr from-emerald-600 to-teal-400" },
+    { name: "Rose", class: "theme-rose", preview: "bg-gradient-to-tr from-pink-600 to-rose-400" },
+    { name: "Amber", class: "theme-amber", preview: "bg-gradient-to-tr from-amber-600 to-yellow-400" },
     { name: "Midnight", class: "theme-midnight", preview: "bg-slate-900 border-slate-700" },
   ];
 
