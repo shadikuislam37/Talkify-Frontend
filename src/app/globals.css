@@ -192,12 +192,12 @@
   background: linear-gradient(135deg, rgba(157, 23, 77, 0.4), rgba(190, 24, 93, 0.4)) !important;
 }
 
-/* অ্যাম্বার (Amber) */
-.theme-amber {
-  background: linear-gradient(135deg, rgba(217, 119, 6, 0.15), rgba(245, 158, 11, 0.15)) !important;
+/* টিল (Teal) */
+.theme-teal {
+  background: linear-gradient(135deg, rgba(13, 148, 136, 0.15), rgba(45, 212, 191, 0.15)) !important;
 }
-.dark .theme-amber {
-  background: linear-gradient(135deg, rgba(146, 64, 14, 0.4), rgba(180, 83, 9, 0.4)) !important;
+.dark .theme-teal {
+  background: linear-gradient(135deg, rgba(19, 78, 74, 0.4), rgba(15, 118, 110, 0.4)) !important;
 }
 
 
