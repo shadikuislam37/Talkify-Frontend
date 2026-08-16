@@ -16,7 +16,7 @@ const themes = [
     { name: "Emerald", class: "theme-emerald", preview: "bg-gradient-to-tr from-emerald-600 to-teal-400" },
     { name: "Rose", class: "theme-rose", preview: "bg-gradient-to-tr from-pink-600 to-rose-400" },
     { name: "Amber", class: "theme-amber", preview: "bg-gradient-to-tr from-amber-600 to-yellow-400" },
-    { name: "Midnight", class: "theme-midnight", preview: "bg-slate-900 border-slate-700" },
+   { name: "Indigo", class: "theme-indigo", preview: "bg-gradient-to-tr from-indigo-600 to-indigo-400" },
   ];
 
   const handleSelectTheme = (themeClass: string) => {

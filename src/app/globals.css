@@ -184,10 +184,29 @@
   background: linear-gradient(135deg, rgba(6, 95, 70, 0.4), rgba(4, 120, 87, 0.4)) !important;
 }
 
-/* মিডনাইট ডার্ক (Midnight) */
-.theme-midnight {
-  background-color: #09090b !important;
-  color: #f4f4f5 !important;
+/* রোজ (Rose) */
+.theme-rose {
+  background: linear-gradient(135deg, rgba(219, 39, 119, 0.15), rgba(244, 114, 182, 0.15)) !important;
+}
+.dark .theme-rose {
+  background: linear-gradient(135deg, rgba(157, 23, 77, 0.4), rgba(190, 24, 93, 0.4)) !important;
+}
+
+/* অ্যাম্বার (Amber) */
+.theme-amber {
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.15), rgba(245, 158, 11, 0.15)) !important;
+}
+.dark .theme-amber {
+  background: linear-gradient(135deg, rgba(146, 64, 14, 0.4), rgba(180, 83, 9, 0.4)) !important;
+}
+
+
+/* ইন্ডিগো (Indigo) */
+.theme-indigo {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.15), rgba(129, 140, 248, 0.15)) !important;
+}
+.dark .theme-indigo {
+  background: linear-gradient(135deg, rgba(49, 46, 129, 0.4), rgba(67, 56, 202, 0.4)) !important;
 }
 
 
