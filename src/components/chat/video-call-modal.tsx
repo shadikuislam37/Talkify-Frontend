@@ -52,6 +52,9 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
   const localStreamRef = useRef<MediaStream | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const offerSentRef = useRef(false);
+    // resume path একবারই চলবে — নইলে receiver-এর প্রতিটা call_ready
+  // নতুন offer তৈরি করে আর একাধিক PeerConnection জমে যায়
+  const reOfferedRef = useRef(false);
   const audioUnlockedRef = useRef(false);
   const remotePeerIdRef = useRef<string | null>(null);
 
@@ -141,6 +144,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     }
     pendingCandidatesRef.current = [];
     offerSentRef.current = false;
+    reOfferedRef.current = false;
     remotePeerIdRef.current = null;
     setRemoteStream(null);
     setNeedsAudioTap(false);
@@ -397,20 +401,55 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       }
     };
 
+
+    // রিসিভার killed অবস্থা থেকে জেগে উঠেছে। পুরনো offer আর তার ICE
+    // candidate গুলো ততক্ষণে বাসি — কেউ শুনছিল না — তাই peer connection
+    // নতুন করে বানিয়ে আবার offer পাঠানো হয়।
+    const handleCallReady = async (data: { from: string; callUUID?: string }) => {
+      if (!targetUser || data.from !== targetUser.id) return;
+      if (reOfferedRef.current) return;
+      reOfferedRef.current = true;
+
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
+      pendingCandidatesRef.current = [];
+
+      if (!localStreamRef.current) return;
+
+      const pc = createPeerConnection(targetUser.id);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socket.emit("call_offer", {
+        targetUserId: targetUser.id,
+        from: currentUserId,
+        name: targetUser.name || "Caller",
+        image: targetUser.image || "",
+        sdp: offer,
+        isVideo: isVideoCall,
+        callUUID: data.callUUID,
+      });
+    };
+
+
     const handleEndCallEvent = () => {
       handleCleanup();
     };
 
     socket.on("receive_call_answer", handleCallAnswer);
     socket.on("receive_ice_candidate", handleIceCandidate);
+    socket.on("receive_call_ready", handleCallReady);
     socket.on("receive_end_call", handleEndCallEvent);
 
     return () => {
-      socket.off("receive_call_answer", handleCallAnswer);
-      socket.off("receive_ice_candidate", handleIceCandidate);
-      socket.off("receive_end_call", handleEndCallEvent);
+     socket.off("receive_call_answer", handleCallAnswer);
+    socket.off("receive_ice_candidate", handleIceCandidate);
+    socket.off("receive_call_ready", handleCallReady);
+    socket.off("receive_end_call", handleEndCallEvent);
     };
-  }, [socket, handleCleanup, acceptCall, stopRingtone]);
+ }, [socket, handleCleanup, acceptCall, stopRingtone, targetUser, currentUserId, isVideoCall]);
 
   const handleAccept = async () => {
     if (!incomingCall) return;
