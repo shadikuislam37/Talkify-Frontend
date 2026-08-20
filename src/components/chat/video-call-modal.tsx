@@ -6,27 +6,28 @@ import { useCallStore } from "@/store/use-call-store";
 import { Button } from "@/components/ui/button";
 import { PhoneOff, PhoneCall, Mic, MicOff, Video, VideoOff, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
+import { getIceServers } from "@/lib/webrtc-config";
 
 interface VideoCallModalProps {
   socket: any;
   currentUserId: string;
 }
 
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: "stun:stun.relay.metered.ca:80" },
-    {
-      urls: "turn:global.relay.metered.ca:80",
-      username: process.env.NEXT_PUBLIC_TURN_USERNAME,
-      credential: process.env.NEXT_PUBLIC_TURN_PASSWORD,
-    },
-    {
-      urls: "turns:global.relay.metered.ca:443?transport=tcp",
-      username: process.env.NEXT_PUBLIC_TURN_USERNAME,
-      credential: process.env.NEXT_PUBLIC_TURN_PASSWORD,
-    },
-  ],
-};
+// const ICE_SERVERS = {
+//   iceServers: [
+//     { urls: "stun:stun.relay.metered.ca:80" },
+//     {
+//       urls: "turn:global.relay.metered.ca:80",
+//       username: process.env.NEXT_PUBLIC_TURN_USERNAME,
+//       credential: process.env.NEXT_PUBLIC_TURN_PASSWORD,
+//     },
+//     {
+//       urls: "turns:global.relay.metered.ca:443?transport=tcp",
+//       username: process.env.NEXT_PUBLIC_TURN_USERNAME,
+//       credential: process.env.NEXT_PUBLIC_TURN_PASSWORD,
+//     },
+//   ],
+// };
 
 export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) => {
   const { isCalling, incomingCall, callActive, targetUser, isVideoCall, setIncomingCall, acceptCall, endCall } =
@@ -267,8 +268,9 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
     }
   };
 
-  const createPeerConnection = (targetUserId: string) => {
-    const pc = new RTCPeerConnection(ICE_SERVERS);
+  const createPeerConnection = async (targetUserId: string) => {
+    const iceServers = await getIceServers();          // 🆕
+  const pc = new RTCPeerConnection(iceServers);      // ICE_SERVERS নয়
     peerConnectionRef.current = pc;
     remotePeerIdRef.current = targetUserId;
 
@@ -355,7 +357,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
         return;
       }
 
-      const pc = createPeerConnection(targetUser.id);
+      const pc = await createPeerConnection(targetUser.id);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
@@ -418,7 +420,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
 
       if (!localStreamRef.current) return;
 
-      const pc = createPeerConnection(targetUser.id);
+      const pc = await createPeerConnection(targetUser.id);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
@@ -466,7 +468,7 @@ export const VideoCallModal = ({ socket, currentUserId }: VideoCallModalProps) =
       return;
     }
 
-    const pc = createPeerConnection(incomingCall.from);
+    const pc = await  createPeerConnection(incomingCall.from);
     await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.sdp));
 
     const answer = await pc.createAnswer();

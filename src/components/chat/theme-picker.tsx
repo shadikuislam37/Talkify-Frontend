@@ -15,7 +15,7 @@ const themes = [
     { name: "Cyberpunk", class: "theme-cyberpunk", preview: "bg-gradient-to-tr from-purple-600 to-pink-500" },
     { name: "Emerald", class: "theme-emerald", preview: "bg-gradient-to-tr from-emerald-600 to-teal-400" },
     { name: "Rose", class: "theme-rose", preview: "bg-gradient-to-tr from-pink-600 to-rose-400" },
-    { name: "Amber", class: "theme-amber", preview: "bg-gradient-to-tr from-amber-600 to-yellow-400" },
+    { name: "Slate", class: "theme-slate", preview: "bg-gradient-to-tr from-slate-600 to-slate-400" },
    { name: "Indigo", class: "theme-indigo", preview: "bg-gradient-to-tr from-indigo-600 to-indigo-400" },
   ];
 
